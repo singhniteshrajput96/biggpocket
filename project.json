@@ -1,0 +1,25 @@
+{
+  "overview": "BiggPocket is a production-ready loan application tracking system for DSA companies. It features a secure admin panel for managing loan files across a 10-stage pipeline, multi-user assignment, real-time tracking, document management, analytics dashboards, and a customer-facing tracker with OTP login.",
+  "features": [
+    "Admin panel with loan CRUD and stage management",
+    "Multi-user loan assignment with many-to-many relationships",
+    "User & Teams management with performance matrix",
+    "Document upload, view, and download per loan",
+    "Dashboard with analytics graphs and clickable filter cards",
+    "Rejected stage with red highlighting",
+    "Customer tracker with real-time 5-second polling",
+    "Role-based access control (Admin/User)",
+    "OTP-based authentication",
+    "Orange and blue BiggPocket branding throughout"
+  ],
+  "category": "finance",
+  "tags": [
+    "loan-tracking",
+    "fintech",
+    "dsa",
+    "admin-panel",
+    "real-time",
+    "document-management"
+  ],
+  "last_updated": "2026-04-13T04:29:32.796Z"
+}

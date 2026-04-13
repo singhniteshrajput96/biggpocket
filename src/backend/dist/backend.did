@@ -1,0 +1,217 @@
+type UserId = nat;
+type UploadDocumentInput = 
+ record {
+   file_name: text;
+   file_size: nat;
+   file_url: text;
+   loan_id: nat;
+ };
+type Token = text;
+type Timestamp = int;
+type Role = 
+ variant {
+   admin;
+   user;
+ };
+type PublicUser = 
+ record {
+   id: UserId;
+   name: text;
+   role: Role;
+ };
+type PaginatedLoans = 
+ record {
+   loans: vec LoanWithHistory;
+   page: nat;
+   pageSize: nat;
+   total: nat;
+ };
+type LoanWithHistory = 
+ record {
+   assigned_user_ids: vec nat;
+   history: vec LoanStageHistory;
+   loan: LoanApplication;
+ };
+type LoanStageHistory = 
+ record {
+   id: nat;
+   loan_id: nat;
+   remarks: text;
+   show_remarks_to_user: bool;
+   stage_index: nat;
+   stage_name: text;
+   timestamp: Timestamp;
+   updated_by_admin_id: nat;
+ };
+type LoanApplication = 
+ record {
+   applicant_name: text;
+   bank_name: text;
+   co_applicant_name: text;
+   created_at: Timestamp;
+   current_stage: nat;
+   distribution_partner: text;
+   employment_type: text;
+   id: nat;
+   income: nat;
+   is_active: bool;
+   is_rejected: bool;
+   loan_amount: nat;
+   loan_type: text;
+   property_type: text;
+   property_value: nat;
+   rejection_reason: text;
+   rejection_stage: nat;
+   updated_at: Timestamp;
+   user_id: opt UserId;
+ };
+type Document = 
+ record {
+   file_name: text;
+   file_size: nat;
+   file_url: text;
+   id: nat;
+   loan_id: nat;
+   uploaded_at: Timestamp;
+   uploaded_by: nat;
+ };
+type DashboardStats = 
+ record {
+   active_loans: nat;
+   disbursed_count: nat;
+   disbursement_percent: float64;
+   dropoff_rate: float64;
+   recent_activity: vec LoanStageHistory;
+   rejected_loans: nat;
+   sanctioned_count: nat;
+   sanctioned_percent: float64;
+   stage_breakdown: vec record {
+                          nat;
+                          text;
+                          nat;
+                        };
+   total_loans: nat;
+ };
+service : {
+  adminAddDocument: (token: text, input: UploadDocumentInput) ->
+   (variant {
+      err: text;
+      ok: Document;
+    });
+  adminAddUserToLoan: (token: text, loanId: nat, userId: nat) ->
+   (variant {
+      err: text;
+      ok;
+    });
+  adminAssignMultipleUsers: (token: text, loanId: nat, userIds: vec nat) ->
+   (variant {
+      err: text;
+      ok;
+    });
+  adminAssignUser: (token: text, loanId: nat, mobile: text) ->
+   (variant {
+      err: text;
+      ok;
+    });
+  adminCreateLoan: (token: text, applicantName: text, bankName: text,
+   loanType: text, loanAmount: nat, mobile: text, distributionPartner: 
+   text, coApplicantName: text, employmentType: text, income: nat,
+   propertyType: text, propertyValue: nat) -> (variant {
+                                                 err: text;
+                                                 ok: nat;
+                                               });
+  adminCreateUser: (token: text, name: text, mobile: text, role: text) ->
+   (variant {
+      err: text;
+      ok: PublicUser;
+    });
+  adminDeleteDocument: (token: text, docId: nat) ->
+   (variant {
+      err: text;
+      ok: bool;
+    });
+  adminDeleteLoan: (token: text, loanId: nat) -> (variant {
+                                                    err: text;
+                                                    ok;
+                                                  });
+  adminGetAllLoans: (token: text, page: nat, pageSize: nat, search: text,
+   stageFilter: opt nat, assignedUserFilter: opt nat) ->
+   (variant {
+      err: text;
+      ok: PaginatedLoans;
+    });
+  adminGetAllUsers: (token: text) ->
+   (variant {
+      err: text;
+      ok: vec PublicUser;
+    });
+  adminGetDashboardStats: (token: text) ->
+   (variant {
+      err: text;
+      ok: DashboardStats;
+    });
+  adminGetLoanDocuments: (token: text, loanId: nat) ->
+   (variant {
+      err: text;
+      ok: vec Document;
+    });
+  adminGetUserById: (token: text, user_id: nat) ->
+   (variant {
+      err: text;
+      ok: opt PublicUser;
+    });
+  adminRejectLoan: (token: text, loanId: nat, reason: text) ->
+   (variant {
+      err: text;
+      ok;
+    });
+  adminRemoveUserFromLoan: (token: text, loanId: nat, userId: nat) ->
+   (variant {
+      err: text;
+      ok;
+    });
+  adminUnrejectLoan: (token: text, loanId: nat) -> (variant {
+                                                      err: text;
+                                                      ok;
+                                                    });
+  adminUpdateAdminMobile: (token: text, new_mobile: text) ->
+   (variant {
+      err: text;
+      ok: text;
+    });
+  adminUpdateLoan: (token: text, loanId: nat, applicantName: text, bankName:
+   text, loanType: text, loanAmount: nat) -> (variant {
+                                                err: text;
+                                                ok;
+                                              });
+  adminUpdateStage: (token: text, loanId: nat, stageIndex: nat, remarks:
+   text, showRemarks: bool) -> (variant {
+                                  err: text;
+                                  ok;
+                                });
+  getLoanById: (token: text, loanId: nat) ->
+   (variant {
+      err: text;
+      ok: LoanWithHistory;
+    });
+  getLoanDocuments: (token: text, loanId: nat) ->
+   (variant {
+      err: text;
+      ok: vec Document;
+    });
+  getMyLoans: (token: text) -> (variant {
+                                  err: text;
+                                  ok: vec LoanWithHistory;
+                                });
+  sendOTP: (mobile: text) -> (text);
+  verifyOTP: (mobile: text, otp: text) ->
+   (variant {
+      err: text;
+      ok: record {
+            name: text;
+            role: text;
+            token: Token;
+            userId: UserId;
+          };
+    });
+}

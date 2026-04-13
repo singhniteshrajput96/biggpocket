@@ -1,0 +1,160 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --font-display: "Space Grotesk", sans-serif;
+    --font-body: "Inter", sans-serif;
+    --font-mono: monospace;
+    --radius: 0.5rem;
+
+    --background: 0.98 0.003 250;
+    --foreground: 0.13 0.02 265;
+    --card: 1.0 0 0;
+    --card-foreground: 0.13 0.02 265;
+    --popover: 1.0 0 0;
+    --popover-foreground: 0.13 0.02 265;
+
+    --primary: 0.66 0.19 47;
+    --primary-foreground: 0.99 0 0;
+
+    --secondary: 0.44 0.16 246;
+    --secondary-foreground: 0.99 0 0;
+    --muted: 0.94 0.005 250;
+    --muted-foreground: 0.52 0.01 265;
+
+    --accent: 0.66 0.19 47;
+    --accent-foreground: 0.99 0 0;
+
+    --destructive: 0.55 0.22 25;
+    --destructive-foreground: 0.98 0 0;
+
+    --border: 0.91 0.005 250;
+    --input: 0.95 0.005 250;
+    --ring: 0.66 0.19 47;
+
+    --chart-1: 0.66 0.19 47;
+    --chart-2: 0.44 0.16 246;
+    --chart-3: 0.72 0.2 142;
+    --chart-4: 0.55 0.22 25;
+    --chart-5: 0.42 0.08 230;
+
+    --sidebar: 0.08 0.05 265;
+    --sidebar-foreground: 0.98 0 0;
+    --sidebar-primary: 0.66 0.19 47;
+    --sidebar-primary-foreground: 0.99 0 0;
+    --sidebar-accent: 0.93 0 0;
+    --sidebar-accent-foreground: 0.15 0 0;
+    --sidebar-border: 0.15 0 0;
+    --sidebar-ring: 0.66 0.19 47;
+  }
+
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-body antialiased;
+  }
+}
+
+@font-face {
+  font-family: "Space Grotesk";
+  src: url("/assets/fonts/SpaceGrotesk.woff2") format("woff2");
+  font-weight: 400 700;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Inter";
+  src: url("/assets/fonts/Inter.woff2") format("woff2");
+  font-weight: 400 600 700;
+  font-display: swap;
+}
+
+@layer utilities {
+  .transition-smooth {
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .font-display {
+    font-family: var(--font-display);
+  }
+
+  .font-body {
+    font-family: var(--font-body);
+  }
+
+  .font-mono {
+    font-family: var(--font-mono);
+  }
+
+  .pulse-accent {
+    animation: pulse-accent 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  .shadow-card {
+    box-shadow: 0 1px 3px 0 oklch(0 0 0 / 0.07), 0 1px 2px -1px
+      oklch(0 0 0 / 0.05);
+  }
+
+  .shadow-elevated {
+    box-shadow: 0 4px 12px -2px oklch(0 0 0 / 0.1), 0 2px 6px -2px
+      oklch(0 0 0 / 0.06);
+  }
+
+  @keyframes pulse-accent {
+    0%,
+    100% {
+      opacity: 1;
+      box-shadow: 0 0 0 0 oklch(0.66 0.19 47 / 0.5);
+    }
+    50% {
+      opacity: 0.8;
+      box-shadow: 0 0 0 6px oklch(0.66 0.19 47 / 0);
+    }
+  }
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes slide-in-right {
+    from {
+      opacity: 0;
+      transform: translateX(16px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  .animate-fade-in {
+    animation: fade-in 0.3s ease-out both;
+  }
+
+  .animate-slide-in {
+    animation: slide-in-right 0.3s ease-out both;
+  }
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: white;
+  }
+  .print-card {
+    box-shadow: none;
+    border: 1px solid #e5e7eb;
+  }
+}
