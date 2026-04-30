@@ -224,7 +224,7 @@ export default function LoginPage() {
                         type="tel"
                         inputMode="numeric"
                         maxLength={10}
-                        placeholder="9999999999"
+                        placeholder="10-digit mobile number"
                         value={mobile}
                         onChange={(e) =>
                           setMobile(
@@ -236,16 +236,6 @@ export default function LoginPage() {
                         data-ocid="mobile-input"
                       />
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      Admin demo:{" "}
-                      <button
-                        type="button"
-                        className="font-mono font-semibold text-primary hover:underline"
-                        onClick={() => setMobile("9999999999")}
-                      >
-                        9999999999
-                      </button>
-                    </p>
                   </div>
                   <Button
                     type="submit"

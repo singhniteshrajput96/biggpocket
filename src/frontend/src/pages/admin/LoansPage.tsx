@@ -11,6 +11,7 @@ import {
   Eye,
   Loader2,
   Plus,
+  RotateCcw,
   Search,
   Trash2,
   Users,
@@ -23,6 +24,8 @@ import {
   useAdminDeleteLoan,
   useAdminGetAllLoans,
   useAdminGetAllUsers,
+  useAdminGetDeletedLoans,
+  useAdminRestoreLoan,
 } from "../../hooks/useQueries";
 import type { LoanWithHistory } from "../../types";
 
@@ -31,6 +34,7 @@ const SANCTIONED_MIN_STAGE = 6;
 const DISBURSED_MIN_STAGE = 7;
 
 type NamedFilter = "active" | "sanctioned" | "disbursed" | "rejected" | null;
+type ActiveTab = "loans" | "deleted";
 
 interface ParsedParams {
   stage: number | null;
@@ -138,6 +142,9 @@ function CreateLoanModal({ onClose }: CreateModalProps) {
     income: "",
     propertyType: "",
     propertyValue: "",
+    requiredAmount: "",
+    sanctionAmount: "",
+    disbursedAmount: "",
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
@@ -175,11 +182,31 @@ function CreateLoanModal({ onClose }: CreateModalProps) {
         propertyValue: form.propertyValue
           ? Number(form.propertyValue)
           : undefined,
+        requiredAmount: form.requiredAmount
+          ? Number(form.requiredAmount)
+          : undefined,
+        sanctionAmount: form.sanctionAmount
+          ? Number(form.sanctionAmount)
+          : undefined,
+        disbursedAmount: form.disbursedAmount
+          ? Number(form.disbursedAmount)
+          : undefined,
       });
       onClose();
     } catch (err) {
+      const msg = (err as Error).message ?? "Failed to create loan";
+      // If session is invalid/expired, the backend returns a specific error — redirect to login
+      if (
+        msg.toLowerCase().includes("invalid") ||
+        msg.toLowerCase().includes("expired") ||
+        msg.toLowerCase().includes("not authenticated") ||
+        msg.toLowerCase().includes("session")
+      ) {
+        window.location.hash = "#/login";
+        return;
+      }
       setFormErrors({
-        submit: (err as Error).message ?? "Failed to create loan",
+        submit: msg,
       });
     }
   }
@@ -330,6 +357,36 @@ function CreateLoanModal({ onClose }: CreateModalProps) {
                   "propertyValue",
                   "Market Value (₹)",
                   "e.g. 8000000",
+                  "number",
+                )}
+              </div>
+            </div>
+
+            {/* Financial Details section */}
+            <div className="pt-2 border-t border-border">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+                Financial Details{" "}
+                <span className="text-muted-foreground font-normal normal-case tracking-normal">
+                  (optional)
+                </span>
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {field(
+                  "requiredAmount",
+                  "Required Amount (₹)",
+                  "e.g. 5000000",
+                  "number",
+                )}
+                {field(
+                  "sanctionAmount",
+                  "Sanction Amount (₹)",
+                  "e.g. 4800000",
+                  "number",
+                )}
+                {field(
+                  "disbursedAmount",
+                  "Disbursed Amount (₹)",
+                  "e.g. 4500000",
                   "number",
                 )}
               </div>
@@ -491,10 +548,17 @@ interface AssignedChipsProps {
 }
 
 function AssignedChips({ userIds, userMap }: AssignedChipsProps) {
-  if (userIds.length === 0)
-    return <span className="text-xs text-muted-foreground italic">—</span>;
-  const visible = userIds.slice(0, 2);
-  const overflow = userIds.length - visible.length;
+  const validIds = (userIds ?? []).filter(
+    (id) => id != null && typeof id === "number",
+  );
+  if (validIds.length === 0)
+    return (
+      <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-muted text-muted-foreground">
+        Unassigned
+      </span>
+    );
+  const visible = validIds.slice(0, 2);
+  const overflow = validIds.length - visible.length;
   return (
     <div className="flex flex-wrap gap-1">
       {visible.map((id) => (
@@ -641,10 +705,112 @@ function LoanRow({
   );
 }
 
+// ─── Deleted Loans Table ──────────────────────────────────────────────────────
+
+interface DeletedLoanRowProps {
+  loanWithHistory: LoanWithHistory;
+  onRestore: (id: number) => void;
+  restoring: boolean;
+}
+
+function DeletedLoanRow({
+  loanWithHistory,
+  onRestore,
+  restoring,
+}: DeletedLoanRowProps) {
+  const { loan } = loanWithHistory;
+  const [confirmRestore, setConfirmRestore] = useState(false);
+
+  return (
+    <tr className="border-b border-border hover:bg-muted/40 transition-smooth">
+      <td className="px-4 py-3 text-sm font-mono text-muted-foreground">
+        #{loan.id}
+      </td>
+      <td className="px-4 py-3">
+        <div className="flex flex-col gap-0.5">
+          <p className="text-sm font-semibold text-foreground truncate max-w-[140px]">
+            {loan.applicantName}
+          </p>
+          {loan.coApplicantName && (
+            <p className="text-xs text-muted-foreground truncate max-w-[140px]">
+              Co: {loan.coApplicantName}
+            </p>
+          )}
+        </div>
+      </td>
+      <td className="px-4 py-3 text-sm text-foreground hidden sm:table-cell">
+        {loan.bankName}
+      </td>
+      <td className="px-4 py-3 hidden lg:table-cell">
+        {loan.isRejected ? (
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700">
+            Rejected
+          </span>
+        ) : (
+          <StageBadge stageIndex={loan.currentStage} />
+        )}
+      </td>
+      <td className="px-4 py-3 text-sm font-semibold text-foreground text-right hidden md:table-cell tabular-nums">
+        {formatCurrency(loan.loanAmount)}
+      </td>
+      <td className="px-4 py-3 text-xs text-muted-foreground hidden xl:table-cell whitespace-nowrap">
+        {formatDate(loan.updatedAt)}
+      </td>
+      <td className="px-4 py-3">
+        <div className="flex items-center gap-1 justify-end">
+          {confirmRestore ? (
+            <div
+              className="flex items-center gap-1.5 rounded-md px-2 py-1"
+              style={{ backgroundColor: "#fff7ed" }}
+            >
+              <span
+                className="text-xs font-semibold"
+                style={{ color: "#f97316" }}
+              >
+                Restore?
+              </span>
+              <button
+                type="button"
+                onClick={() => onRestore(loan.id)}
+                disabled={restoring}
+                className="text-xs font-bold hover:underline"
+                style={{ color: "#f97316" }}
+                data-ocid={`deleted-loan-restore-confirm-${loan.id}`}
+              >
+                {restoring ? "…" : "Yes"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmRestore(false)}
+                className="text-xs text-muted-foreground hover:underline"
+              >
+                No
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmRestore(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold text-white transition-smooth hover:opacity-90"
+              style={{ backgroundColor: "#F47B30" }}
+              aria-label="Restore loan"
+              data-ocid={`deleted-loan-restore-${loan.id}`}
+            >
+              <RotateCcw size={13} />
+              Restore
+            </button>
+          )}
+        </div>
+      </td>
+    </tr>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function LoansPage() {
   const parsed = parseHashParams();
+  const [activeTab, setActiveTab] = useState<ActiveTab>("loans");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [search, setSearch] = useState("");
@@ -704,6 +870,13 @@ export default function LoansPage() {
     assignedUserFilter,
   );
   const deleteMutation = useAdminDeleteLoan();
+  const {
+    data: deletedLoans,
+    isLoading: deletedLoading,
+    isError: deletedError,
+  } = useAdminGetDeletedLoans();
+  const restoreMutation = useAdminRestoreLoan();
+  const [restoringId, setRestoringId] = useState<number | null>(null);
 
   async function handleDelete(loanId: number) {
     setDeletingId(loanId);
@@ -711,6 +884,15 @@ export default function LoansPage() {
       await deleteMutation.mutateAsync(loanId);
     } finally {
       setDeletingId(null);
+    }
+  }
+
+  async function handleRestore(loanId: number) {
+    setRestoringId(loanId);
+    try {
+      await restoreMutation.mutateAsync(loanId);
+    } finally {
+      setRestoringId(null);
     }
   }
 
@@ -766,211 +948,362 @@ export default function LoansPage() {
           </Button>
         </div>
 
-        {/* Active filter badge */}
-        {hasFilter && activeLabel && (
-          <div
-            className="flex items-center gap-2"
-            data-ocid="loans-active-filter"
+        {/* Tab Switcher */}
+        <div
+          className="flex items-center gap-1 border-b border-border"
+          data-ocid="loans-tabs"
+        >
+          <button
+            type="button"
+            onClick={() => setActiveTab("loans")}
+            className={`px-4 py-2.5 text-sm font-medium transition-smooth border-b-2 -mb-px ${
+              activeTab === "loans"
+                ? "border-orange-500 text-orange-600"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+            data-ocid="loans-tab-active"
           >
-            <Badge
-              variant="secondary"
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full"
-              style={{
-                backgroundColor: "#fff7ed",
-                color: "#f97316",
-                border: "1px solid #fed7aa",
-              }}
-            >
-              <span>Showing: {activeLabel}</span>
-              <button
-                type="button"
-                onClick={clearFilter}
-                className="ml-1 rounded-full hover:bg-orange-200 transition-smooth p-0.5"
-                aria-label="Clear filter"
-                data-ocid="loans-clear-filter"
+            Active Loans
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("deleted")}
+            className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-smooth border-b-2 -mb-px ${
+              activeTab === "deleted"
+                ? "border-orange-500 text-orange-600"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+            data-ocid="loans-tab-deleted"
+          >
+            <Trash2 size={13} />
+            Deleted
+            {(deletedLoans?.length ?? 0) > 0 && (
+              <span
+                className="inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold rounded-full text-white"
+                style={{ backgroundColor: "#F47B30" }}
               >
-                <X size={12} />
-              </button>
-            </Badge>
-          </div>
-        )}
-
-        {/* Search + Stage filter + User filter */}
-        <div className="flex flex-col sm:flex-row gap-3">
-          <div className="relative flex-1">
-            <Search
-              size={15}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none"
-            />
-            <Input
-              type="search"
-              placeholder="Search by applicant, mobile, bank..."
-              value={search}
-              onChange={(e) => handleSearch(e.target.value)}
-              className="pl-9"
-              data-ocid="loans-search"
-            />
-          </div>
-          <select
-            className="border border-input rounded-md px-3 py-2 text-sm bg-background text-foreground min-w-[160px]"
-            value={stageFilter ?? ""}
-            onChange={(e) => {
-              const val = e.target.value;
-              const newStage = val === "" ? null : Number(val);
-              setStageFilter(newStage);
-              setNamedFilter(null);
-              setPage(1);
-              window.location.hash =
-                val === "" ? "#/admin/loans" : `#/admin/loans?stage=${val}`;
-            }}
-            data-ocid="loans-stage-filter"
-          >
-            <option value="">All Stages</option>
-            {LOAN_STAGES.map((name, idx) => (
-              <option key={name} value={idx}>
-                {idx + 1}. {name}
-              </option>
-            ))}
-          </select>
-          <select
-            className="border border-input rounded-md px-3 py-2 text-sm bg-background text-foreground min-w-[160px]"
-            value={assignedUserFilter ?? ""}
-            onChange={(e) => {
-              const val = e.target.value;
-              const newUserId = val === "" ? null : Number(val);
-              setAssignedUserFilter(newUserId);
-              setPage(1);
-            }}
-            data-ocid="loans-user-filter"
-          >
-            <option value="">All Users</option>
-            {(usersData ?? []).map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.name}
-              </option>
-            ))}
-          </select>
+                {deletedLoans!.length > 9 ? "9+" : deletedLoans!.length}
+              </span>
+            )}
+          </button>
         </div>
 
-        {/* Table */}
-        <Card className="shadow-card border border-border bg-card overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="bg-muted/60 border-b border-border">
-                  <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                    ID
-                  </th>
-                  <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                    Applicant
-                  </th>
-                  <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden sm:table-cell">
-                    Bank
-                  </th>
-                  <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden md:table-cell">
-                    Type
-                  </th>
-                  <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden lg:table-cell">
-                    Stage
-                  </th>
-                  <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider text-right hidden md:table-cell">
-                    Amount
-                  </th>
-                  <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden xl:table-cell">
-                    Updated
-                  </th>
-                  <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider text-right">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {isLoading &&
-                  [1, 2, 3, 4, 5].map((i) => (
-                    <tr key={i} className="border-b border-border">
-                      {[1, 2, 3, 4, 5, 6, 7, 8].map((j) => (
-                        <td key={j} className="px-4 py-3">
-                          <Skeleton className="h-4 w-full" />
-                        </td>
-                      ))}
+        {/* ── ACTIVE LOANS TAB ───────────────────────────────────────────── */}
+        {activeTab === "loans" && (
+          <>
+            {/* Active filter badge */}
+            {hasFilter && activeLabel && (
+              <div
+                className="flex items-center gap-2"
+                data-ocid="loans-active-filter"
+              >
+                <Badge
+                  variant="secondary"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full"
+                  style={{
+                    backgroundColor: "#fff7ed",
+                    color: "#f97316",
+                    border: "1px solid #fed7aa",
+                  }}
+                >
+                  <span>Showing: {activeLabel}</span>
+                  <button
+                    type="button"
+                    onClick={clearFilter}
+                    className="ml-1 rounded-full hover:bg-orange-200 transition-smooth p-0.5"
+                    aria-label="Clear filter"
+                    data-ocid="loans-clear-filter"
+                  >
+                    <X size={12} />
+                  </button>
+                </Badge>
+              </div>
+            )}
+
+            {/* Search + Stage filter + User filter */}
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="relative flex-1">
+                <Search
+                  size={15}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none"
+                />
+                <Input
+                  type="search"
+                  placeholder="Search by applicant, mobile, bank..."
+                  value={search}
+                  onChange={(e) => handleSearch(e.target.value)}
+                  className="pl-9"
+                  data-ocid="loans-search"
+                />
+              </div>
+              <select
+                className="border border-input rounded-md px-3 py-2 text-sm bg-background text-foreground min-w-[160px]"
+                value={stageFilter ?? ""}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  const newStage = val === "" ? null : Number(val);
+                  setStageFilter(newStage);
+                  setNamedFilter(null);
+                  setPage(1);
+                  window.location.hash =
+                    val === "" ? "#/admin/loans" : `#/admin/loans?stage=${val}`;
+                }}
+                data-ocid="loans-stage-filter"
+              >
+                <option value="">All Stages</option>
+                {LOAN_STAGES.map((name, idx) => (
+                  <option key={name} value={idx}>
+                    {idx + 1}. {name}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="border border-input rounded-md px-3 py-2 text-sm bg-background text-foreground min-w-[160px]"
+                value={assignedUserFilter ?? ""}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  const newUserId = val === "" ? null : Number(val);
+                  setAssignedUserFilter(newUserId);
+                  setPage(1);
+                }}
+                data-ocid="loans-user-filter"
+              >
+                <option value="">All Users</option>
+                {(usersData ?? []).map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Table */}
+            <Card className="shadow-card border border-border bg-card overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead>
+                    <tr className="bg-muted/60 border-b border-border">
+                      <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                        ID
+                      </th>
+                      <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                        Applicant
+                      </th>
+                      <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden sm:table-cell">
+                        Bank
+                      </th>
+                      <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden md:table-cell">
+                        Type
+                      </th>
+                      <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden lg:table-cell">
+                        Stage
+                      </th>
+                      <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider text-right hidden md:table-cell">
+                        Amount
+                      </th>
+                      <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden xl:table-cell">
+                        Updated
+                      </th>
+                      <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider text-right">
+                        Actions
+                      </th>
                     </tr>
-                  ))}
-                {isError && (
-                  <tr>
-                    <td colSpan={8} className="px-4 py-12 text-center">
-                      <AlertTriangle
-                        size={28}
-                        className="text-destructive mx-auto mb-2 opacity-70"
-                      />
-                      <p className="text-sm text-muted-foreground">
-                        Failed to load loans. Please refresh.
-                      </p>
-                    </td>
-                  </tr>
-                )}
-                {!isLoading && !isError && displayedLoans.length === 0 && (
-                  <tr>
-                    <td
-                      colSpan={8}
-                      className="px-4 py-16 text-center"
-                      data-ocid="loans-empty-state"
-                    >
-                      <div className="flex flex-col items-center gap-3">
-                        <div className="w-14 h-14 rounded-full bg-muted flex items-center justify-center">
-                          <Search
-                            size={24}
-                            className="text-muted-foreground opacity-50"
+                  </thead>
+                  <tbody>
+                    {isLoading &&
+                      [1, 2, 3, 4, 5].map((i) => (
+                        <tr key={i} className="border-b border-border">
+                          {[1, 2, 3, 4, 5, 6, 7, 8].map((j) => (
+                            <td key={j} className="px-4 py-3">
+                              <Skeleton className="h-4 w-full" />
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    {isError && (
+                      <tr>
+                        <td colSpan={8} className="px-4 py-12 text-center">
+                          <AlertTriangle
+                            size={28}
+                            className="text-destructive mx-auto mb-2 opacity-70"
                           />
-                        </div>
-                        <p className="text-foreground font-semibold">
-                          No loans found
-                        </p>
-                        <p className="text-sm text-muted-foreground max-w-xs">
-                          {debouncedSearch || hasFilter
-                            ? "Try adjusting your search or clearing the filter."
-                            : "Create your first loan application to get started."}
-                        </p>
-                        {!debouncedSearch && !hasFilter && (
-                          <Button
-                            size="sm"
-                            onClick={() => setShowCreateModal(true)}
-                            className="text-white"
-                            style={{ backgroundColor: "#f97316" }}
-                          >
-                            <Plus size={14} className="mr-1" />
-                            New Loan
-                          </Button>
-                        )}
-                      </div>
-                    </td>
+                          <p className="text-sm text-muted-foreground">
+                            Failed to load loans. Please refresh.
+                          </p>
+                        </td>
+                      </tr>
+                    )}
+                    {!isLoading && !isError && displayedLoans.length === 0 && (
+                      <tr>
+                        <td
+                          colSpan={8}
+                          className="px-4 py-16 text-center"
+                          data-ocid="loans-empty-state"
+                        >
+                          <div className="flex flex-col items-center gap-3">
+                            <div className="w-14 h-14 rounded-full bg-muted flex items-center justify-center">
+                              <Search
+                                size={24}
+                                className="text-muted-foreground opacity-50"
+                              />
+                            </div>
+                            <p className="text-foreground font-semibold">
+                              No loans found
+                            </p>
+                            <p className="text-sm text-muted-foreground max-w-xs">
+                              {debouncedSearch || hasFilter
+                                ? "Try adjusting your search or clearing the filter."
+                                : "Create your first loan application to get started."}
+                            </p>
+                            {!debouncedSearch && !hasFilter && (
+                              <Button
+                                size="sm"
+                                onClick={() => setShowCreateModal(true)}
+                                className="text-white"
+                                style={{ backgroundColor: "#f97316" }}
+                              >
+                                <Plus size={14} className="mr-1" />
+                                New Loan
+                              </Button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    {!isLoading &&
+                      !isError &&
+                      displayedLoans.map((lwh) => (
+                        <LoanRow
+                          key={lwh.loan.id}
+                          loanWithHistory={lwh}
+                          onDelete={handleDelete}
+                          deleting={deletingId === lwh.loan.id}
+                          userMap={userMap}
+                        />
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+              {data && data.total > 0 && (
+                <CardContent className="px-4 py-3">
+                  <Pagination
+                    page={page}
+                    total={data.total}
+                    pageSize={pageSize}
+                    onPage={setPage}
+                    onPageSize={setPageSize}
+                  />
+                </CardContent>
+              )}
+            </Card>
+          </>
+        )}
+
+        {/* ── DELETED LOANS TAB ─────────────────────────────────────────── */}
+        {activeTab === "deleted" && (
+          <Card className="shadow-card border border-border bg-card overflow-hidden">
+            <div className="px-4 py-3 border-b border-border bg-muted/30 flex items-center gap-2">
+              <RotateCcw size={14} style={{ color: "#F47B30" }} />
+              <p className="text-sm font-medium text-foreground">
+                Deleted Loans
+              </p>
+              <span className="text-xs text-muted-foreground ml-auto">
+                Restore a loan to bring it back to the active pipeline
+              </span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="bg-muted/60 border-b border-border">
+                    <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                      ID
+                    </th>
+                    <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                      Applicant
+                    </th>
+                    <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden sm:table-cell">
+                      Bank
+                    </th>
+                    <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden lg:table-cell">
+                      Stage
+                    </th>
+                    <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider text-right hidden md:table-cell">
+                      Amount
+                    </th>
+                    <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden xl:table-cell">
+                      Deleted On
+                    </th>
+                    <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider text-right">
+                      Action
+                    </th>
                   </tr>
-                )}
-                {!isLoading &&
-                  !isError &&
-                  displayedLoans.map((lwh) => (
-                    <LoanRow
-                      key={lwh.loan.id}
-                      loanWithHistory={lwh}
-                      onDelete={handleDelete}
-                      deleting={deletingId === lwh.loan.id}
-                      userMap={userMap}
-                    />
-                  ))}
-              </tbody>
-            </table>
-          </div>
-          {data && data.total > 0 && (
-            <CardContent className="px-4 py-3">
-              <Pagination
-                page={page}
-                total={data.total}
-                pageSize={pageSize}
-                onPage={setPage}
-                onPageSize={setPageSize}
-              />
-            </CardContent>
-          )}
-        </Card>
+                </thead>
+                <tbody>
+                  {deletedLoading &&
+                    [1, 2, 3].map((i) => (
+                      <tr key={i} className="border-b border-border">
+                        {[1, 2, 3, 4, 5, 6, 7].map((j) => (
+                          <td key={j} className="px-4 py-3">
+                            <Skeleton className="h-4 w-full" />
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  {deletedError && (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-12 text-center">
+                        <AlertTriangle
+                          size={28}
+                          className="text-destructive mx-auto mb-2 opacity-70"
+                        />
+                        <p className="text-sm text-muted-foreground">
+                          Failed to load deleted loans. Please refresh.
+                        </p>
+                      </td>
+                    </tr>
+                  )}
+                  {!deletedLoading &&
+                    !deletedError &&
+                    (deletedLoans ?? []).length === 0 && (
+                      <tr>
+                        <td
+                          colSpan={7}
+                          className="px-4 py-16 text-center"
+                          data-ocid="deleted-loans-empty-state"
+                        >
+                          <div className="flex flex-col items-center gap-3">
+                            <div className="w-14 h-14 rounded-full bg-muted flex items-center justify-center">
+                              <Trash2
+                                size={24}
+                                className="text-muted-foreground opacity-50"
+                              />
+                            </div>
+                            <p className="text-foreground font-semibold">
+                              No deleted loans
+                            </p>
+                            <p className="text-sm text-muted-foreground max-w-xs">
+                              Loans you delete will appear here and can be
+                              restored at any time.
+                            </p>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  {!deletedLoading &&
+                    !deletedError &&
+                    (deletedLoans ?? []).map((lwh) => (
+                      <DeletedLoanRow
+                        key={lwh.loan.id}
+                        loanWithHistory={lwh}
+                        onRestore={handleRestore}
+                        restoring={restoringId === lwh.loan.id}
+                      />
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        )}
       </div>
     </>
   );

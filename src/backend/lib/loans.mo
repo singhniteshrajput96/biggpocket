@@ -36,7 +36,10 @@ module {
     employmentType : Text,
     income : Nat,
     propertyType : Text,
-    propertyValue : Nat
+    propertyValue : Nat,
+    requiredAmount : Nat,
+    sanctionAmount : Nat,
+    disbursedAmount : Nat
   ) : LoanTypes.LoanApplication {
     let loan : LoanTypes.LoanApplication = {
       id = nextId;
@@ -58,6 +61,9 @@ module {
       is_rejected = false;
       rejection_reason = "";
       rejection_stage = 0;
+      required_amount = requiredAmount;
+      sanction_amount = sanctionAmount;
+      disbursed_amount = disbursedAmount;
     };
     loans.add(loan);
     loan
@@ -99,29 +105,37 @@ module {
     }
   };
 
+  // Extended updateLoanDetails — now accepts all UpdateLoanInput fields including financials
   public func updateLoanDetails(
     loans : List.List<LoanTypes.LoanApplication>,
     loanId : Nat,
-    applicantName : Text,
-    bankName : Text,
-    loanType : Text,
-    loanAmount : Nat,
+    input : LoanTypes.UpdateLoanInput,
     now : Common.Timestamp
   ) : Bool {
     switch (loans.findIndex(func(l : LoanTypes.LoanApplication) : Bool { Nat.equal(l.id, loanId) and l.is_active })) {
+      case null { false };
       case (?idx) {
         let loan = loans.at(idx);
-        loans.put(idx, {
+        let updated : LoanTypes.LoanApplication = {
           loan with
-          applicant_name = applicantName;
-          bank_name = bankName;
-          loan_type = loanType;
-          loan_amount = loanAmount;
+          applicant_name     = switch (input.applicant_name)     { case (?v) v; case null loan.applicant_name };
+          loan_amount        = switch (input.loan_amount)        { case (?v) v; case null loan.loan_amount };
+          bank_name          = switch (input.bank_name)          { case (?v) v; case null loan.bank_name };
+          loan_type          = switch (input.loan_type)          { case (?v) v; case null loan.loan_type };
+          distribution_partner = switch (input.distribution_partner) { case (?v) v; case null loan.distribution_partner };
+          co_applicant_name  = switch (input.co_applicant_name)  { case (?v) v; case null loan.co_applicant_name };
+          employment_type    = switch (input.employment_type)    { case (?v) v; case null loan.employment_type };
+          income             = switch (input.income)             { case (?v) v; case null loan.income };
+          property_type      = switch (input.property_type)      { case (?v) v; case null loan.property_type };
+          property_value     = switch (input.property_value)     { case (?v) v; case null loan.property_value };
+          required_amount    = switch (input.required_amount)    { case (?v) v; case null loan.required_amount };
+          sanction_amount    = switch (input.sanction_amount)    { case (?v) v; case null loan.sanction_amount };
+          disbursed_amount   = switch (input.disbursed_amount)   { case (?v) v; case null loan.disbursed_amount };
           updated_at = now;
-        });
+        };
+        loans.put(idx, updated);
         true
       };
-      case null { false };
     }
   };
 
@@ -370,6 +384,38 @@ module {
     }
   };
 
+  // Restore a soft-deleted loan (set is_active = true)
+  public func restoreLoan(
+    loans : List.List<LoanTypes.LoanApplication>,
+    loanId : Nat,
+    now : Common.Timestamp
+  ) : Bool {
+    switch (loans.findIndex(func(l : LoanTypes.LoanApplication) : Bool { Nat.equal(l.id, loanId) and not l.is_active })) {
+      case (?idx) {
+        let loan = loans.at(idx);
+        loans.put(idx, { loan with is_active = true; updated_at = now });
+        true
+      };
+      case null { false };
+    }
+  };
+
+  // Get all soft-deleted loans
+  public func getDeletedLoans(
+    loans : List.List<LoanTypes.LoanApplication>,
+    history : List.List<LoanTypes.LoanStageHistory>,
+    loanAssignments : List.List<LoanTypes.LoanAssignment>
+  ) : [LoanTypes.LoanWithHistory] {
+    loans
+      .filter(func(l : LoanTypes.LoanApplication) : Bool { not l.is_active })
+      .map<LoanTypes.LoanApplication, LoanTypes.LoanWithHistory>(
+        func(l : LoanTypes.LoanApplication) : LoanTypes.LoanWithHistory {
+          getLoanWithHistory(l, history, loanAssignments)
+        }
+      )
+      .toArray()
+  };
+
   public func getLoanWithHistory(
     loan : LoanTypes.LoanApplication,
     history : List.List<LoanTypes.LoanStageHistory>,
@@ -487,59 +533,134 @@ module {
     loans : List.List<LoanTypes.LoanApplication>,
     history : List.List<LoanTypes.LoanStageHistory>
   ) : LoanTypes.DashboardStats {
-    let activeLoans = loans.filter(func(l : LoanTypes.LoanApplication) : Bool { l.is_active });
-    let total = activeLoans.size();
+    var total = 0;
+    var active = 0;
+    var disbursed = 0;
+    var sanctioned = 0;
+    var rejected = 0;
+    var totalDisbursedAmount = 0;
+    var totalSanctionedAmount = 0;
 
-    // Stage breakdown: count per stage
-    let breakdown : [(Nat, Text, Nat)] = Array.tabulate(
-      STAGE_NAMES.size(),
-      func(i) {
-        let count = activeLoans.filter(func(l : LoanTypes.LoanApplication) : Bool { Nat.equal(l.current_stage, i) }).size();
-        (i, STAGE_NAMES[i], count)
-      }
+    // Stage counts: mutable array indexed by stage
+    let stageCount : Nat = STAGE_NAMES.size();
+    let stageCounts : [var Nat] = Array.tabulate(stageCount, func _ = 0).toVarArray();
+
+    for (l in loans.values()) {
+      if (l.is_active) {
+        total += 1;
+        if (l.is_rejected) {
+          rejected += 1;
+        } else {
+          active += 1;
+          if (l.current_stage >= 7) { disbursed += 1 };
+          if (l.current_stage >= 6) { sanctioned += 1 };
+          if (l.current_stage < stageCount) {
+            stageCounts[l.current_stage] += 1;
+          };
+          totalDisbursedAmount += l.disbursed_amount;
+          totalSanctionedAmount += l.sanction_amount;
+        };
+      };
+    };
+
+    let stage_breakdown : [(Nat, Text, Nat)] = Array.tabulate<(Nat, Text, Nat)>(
+      stageCount,
+      func(i : Nat) : (Nat, Text, Nat) { (i, STAGE_NAMES[i], stageCounts[i]) }
     );
 
-    // Recent activity: last 10 history entries sorted desc
+    // Recent activity: last 10 history entries sorted descending by timestamp
     let allHistory = history.toArray();
-    let histSize = allHistory.size();
-    let sortedDesc = allHistory.sort(
-      func(a : LoanTypes.LoanStageHistory, b : LoanTypes.LoanStageHistory) : Order.Order = Int.compare(b.timestamp, a.timestamp)
+    let sorted = allHistory.sort(
+      func(a : LoanTypes.LoanStageHistory, b : LoanTypes.LoanStageHistory) : Order.Order =
+        Int.compare(b.timestamp, a.timestamp)
     );
-    let recentCount = if (histSize < 10) { histSize } else { 10 };
-    let recent = sortedDesc.sliceToArray(0, recentCount);
+    let recentSize = if (sorted.size() < 10) sorted.size() else 10;
+    let recent_activity = sorted.sliceToArray(0, recentSize);
 
-    // Conversion metrics
-    let totalFloat = if (total == 0) { 1.0 } else { total.toFloat() };
-
-    // active: loans at stages 0-7 (not yet fully disbursed), not rejected
-    let activeLoanCount = activeLoans.filter(func(l : LoanTypes.LoanApplication) : Bool { l.current_stage <= 7 and not l.is_rejected }).size();
-
-    // sanctioned: loans at stage 6+
-    let sanctionedCount = activeLoans.filter(func(l : LoanTypes.LoanApplication) : Bool { l.current_stage >= 6 }).size();
-    let sanctioned_percent = sanctionedCount.toFloat() / totalFloat * 100.0;
-
-    // disbursed: loans at stage 7+
-    let disbursedCount = activeLoans.filter(func(l : LoanTypes.LoanApplication) : Bool { l.current_stage >= 7 }).size();
-    let disbursement_percent = disbursedCount.toFloat() / totalFloat * 100.0;
-
-    // dropoff: loans in early stages (0-2) as % of total
-    let dropoffCount = activeLoans.filter(func(l : LoanTypes.LoanApplication) : Bool { l.current_stage <= 2 }).size();
-    let dropoff_rate = dropoffCount.toFloat() / totalFloat * 100.0;
-
-    // rejected: loans with is_rejected flag set
-    let rejectedCount = activeLoans.filter(func(l : LoanTypes.LoanApplication) : Bool { l.is_rejected }).size();
+    let totalF : Float = total.toFloat();
+    let sanctioned_percent : Float = if (total == 0) 0.0 else
+      (sanctioned.toFloat() / totalF) * 100.0;
+    let disbursement_percent : Float = if (total == 0) 0.0 else
+      (disbursed.toFloat() / totalF) * 100.0;
+    let remaining : Nat = if (disbursed > total) 0 else (total - disbursed : Nat);
+    let dropoff_rate : Float = if (total == 0) 0.0 else
+      (remaining.toFloat() / totalF) * 100.0;
 
     {
       total_loans = total;
-      active_loans = activeLoanCount;
-      disbursed_count = disbursedCount;
-      sanctioned_count = sanctionedCount;
-      rejected_loans = rejectedCount;
-      stage_breakdown = breakdown;
-      recent_activity = recent;
+      active_loans = active;
+      disbursed_count = disbursed;
+      sanctioned_count = sanctioned;
+      rejected_loans = rejected;
+      stage_breakdown;
+      recent_activity;
       sanctioned_percent;
       disbursement_percent;
       dropoff_rate;
+      total_disbursed_amount = totalDisbursedAmount;
+      total_sanctioned_amount = totalSanctionedAmount;
+    }
+  };
+
+  // Get user-specific dashboard stats — restricted to loans assigned to userId
+  public func getUserDashboardStats(
+    loans : List.List<LoanTypes.LoanApplication>,
+    loanAssignments : List.List<LoanTypes.LoanAssignment>,
+    userId : Common.UserId
+  ) : LoanTypes.UserDashboardStats {
+    let userLoans = loans.filter(func(l : LoanTypes.LoanApplication) : Bool {
+      if (not l.is_active) { return false };
+      let directAssign = switch (l.user_id) {
+        case (?uid) { Nat.equal(uid, userId) };
+        case null { false };
+      };
+      if (directAssign) { return true };
+      switch (loanAssignments.find(
+        func(a : LoanTypes.LoanAssignment) : Bool {
+          Nat.equal(a.loan_id, l.id) and Nat.equal(a.user_id, userId)
+        }
+      )) {
+        case (?_) { true };
+        case null { false };
+      }
+    });
+
+    var totalValue = 0;
+    var activeCount = 0;
+    var totalDisbursed = 0;
+    var totalSanctioned = 0;
+    let stageCount : Nat = STAGE_NAMES.size();
+    let stageCounts : [var Nat] = Array.tabulate(stageCount, func _ = 0).toVarArray();
+
+    for (l in userLoans.values()) {
+      totalValue += l.loan_amount;
+      if (not l.is_rejected) {
+        activeCount += 1;
+        if (l.current_stage < stageCount) {
+          stageCounts[l.current_stage] += 1;
+        };
+        totalDisbursed += l.disbursed_amount;
+        totalSanctioned += l.sanction_amount;
+      };
+    };
+
+    let stage_breakdown : [(Text, Nat)] = Array.tabulate<(Text, Nat)>(
+      stageCount,
+      func(i : Nat) : (Text, Nat) { (STAGE_NAMES[i], stageCounts[i]) }
+    );
+
+    let allLoans = userLoans.toArray();
+    let recentSize = if (allLoans.size() < 5) allLoans.size() else 5;
+    let recent_loans = allLoans.sliceToArray(0, recentSize);
+
+    {
+      total_loans = userLoans.size();
+      total_value = totalValue;
+      active_loans = activeCount;
+      stage_breakdown;
+      recent_loans;
+      total_disbursed_amount = totalDisbursed;
+      total_sanctioned_amount = totalSanctioned;
     }
   };
 };

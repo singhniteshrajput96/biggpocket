@@ -44,6 +44,10 @@ export interface LoanApplication {
   isRejected?: boolean;
   rejectionReason?: string;
   rejectionStage?: number;
+  // Financial tracking fields (optional, default 0)
+  requiredAmount?: number;
+  sanctionAmount?: number;
+  disbursedAmount?: number;
 }
 
 export interface LoanWithHistory {
@@ -63,6 +67,8 @@ export interface DashboardStats {
   disbursementPercent: number;
   dropoffRate: number;
   recentActivity: LoanStageHistory[];
+  totalDisbursedAmount: number;
+  totalSanctionedAmount: number;
 }
 
 export interface PaginatedLoans {
@@ -91,25 +97,39 @@ export interface CreateLoanInput {
   income?: number;
   propertyType?: string;
   propertyValue?: number;
+  requiredAmount?: number;
+  sanctionAmount?: number;
+  disbursedAmount?: number;
 }
 
 export interface UpdateLoanInput {
-  applicantName: string;
-  bankName: string;
-  loanType: string;
-  loanAmount: number;
+  applicantName?: string;
+  bankName?: string;
+  loanType?: string;
+  loanAmount?: number;
+  coApplicantName?: string;
+  distributionPartner?: string;
+  employmentType?: string;
+  income?: number;
+  propertyType?: string;
+  propertyValue?: number;
+  requiredAmount?: number;
+  sanctionAmount?: number;
+  disbursedAmount?: number;
 }
 
 export interface CreateUserInput {
   name: string;
   mobile: string;
   role: "admin" | "user";
+  user_type?: "internal" | "external";
 }
 
 export interface CreatedUser {
   id: number;
   name: string;
   role: string;
+  user_type: string;
 }
 
 // New types
@@ -135,6 +155,8 @@ export interface PublicUser {
   id: number;
   name: string;
   role: string;
+  /** 'internal' | 'external' — defaults to 'internal' */
+  user_type: string;
 }
 
 export interface UserLoanStats {
@@ -152,6 +174,8 @@ export interface UserDashboardStats {
   active_loans: number;
   stage_breakdown: [string, number][];
   recent_loans: LoanApplication[];
+  totalDisbursedAmount: number;
+  totalSanctionedAmount: number;
 }
 
 export interface UploadDocumentInput {

@@ -89,20 +89,6 @@ export class ExternalBlob {
         return this;
     }
 }
-export interface DashboardStats {
-    total_loans: bigint;
-    sanctioned_count: bigint;
-    rejected_loans: bigint;
-    stage_breakdown: Array<[bigint, string, bigint]>;
-    disbursement_percent: number;
-    active_loans: bigint;
-    recent_activity: Array<LoanStageHistory>;
-    sanctioned_percent: number;
-    dropoff_rate: number;
-    disbursed_count: bigint;
-}
-export type UserId = bigint;
-export type Timestamp = bigint;
 export interface LoanStageHistory {
     id: bigint;
     loan_id: bigint;
@@ -113,6 +99,7 @@ export interface LoanStageHistory {
     stage_name: string;
     remarks: string;
 }
+export type Timestamp = bigint;
 export interface PaginatedLoans {
     total: bigint;
     page: bigint;
@@ -128,32 +115,25 @@ export interface Document {
     uploaded_at: Timestamp;
     uploaded_by: bigint;
 }
-export type Token = string;
-export interface LoanApplication {
-    id: bigint;
-    co_applicant_name: string;
-    bank_name: string;
-    updated_at: Timestamp;
-    current_stage: bigint;
-    is_rejected: boolean;
-    employment_type: string;
-    created_at: Timestamp;
-    user_id?: UserId;
-    loan_amount: bigint;
-    loan_type: string;
-    income: bigint;
-    rejection_stage: bigint;
-    property_value: bigint;
-    distribution_partner: string;
-    property_type: string;
-    is_active: boolean;
-    rejection_reason: string;
-    applicant_name: string;
-}
 export interface PublicUser {
     id: UserId;
+    user_type: string;
     name: string;
     role: Role;
+}
+export interface DashboardStats {
+    total_loans: bigint;
+    sanctioned_count: bigint;
+    total_sanctioned_amount: bigint;
+    rejected_loans: bigint;
+    stage_breakdown: Array<[bigint, string, bigint]>;
+    disbursement_percent: number;
+    active_loans: bigint;
+    recent_activity: Array<LoanStageHistory>;
+    sanctioned_percent: number;
+    total_disbursed_amount: bigint;
+    dropoff_rate: number;
+    disbursed_count: bigint;
 }
 export interface LoanWithHistory {
     loan: LoanApplication;
@@ -165,6 +145,56 @@ export interface UploadDocumentInput {
     file_name: string;
     file_url: string;
     file_size: bigint;
+}
+export interface UpdateLoanInput {
+    co_applicant_name?: string;
+    bank_name?: string;
+    required_amount?: bigint;
+    employment_type?: string;
+    loan_amount?: bigint;
+    loan_type?: string;
+    income?: bigint;
+    sanction_amount?: bigint;
+    property_value?: bigint;
+    distribution_partner?: string;
+    disbursed_amount?: bigint;
+    property_type?: string;
+    applicant_name?: string;
+}
+export type UserId = bigint;
+export interface UserDashboardStats {
+    total_loans: bigint;
+    total_sanctioned_amount: bigint;
+    stage_breakdown: Array<[string, bigint]>;
+    recent_loans: Array<LoanApplication>;
+    active_loans: bigint;
+    total_value: bigint;
+    total_disbursed_amount: bigint;
+}
+export type Token = string;
+export interface LoanApplication {
+    id: bigint;
+    co_applicant_name: string;
+    bank_name: string;
+    updated_at: Timestamp;
+    current_stage: bigint;
+    is_rejected: boolean;
+    required_amount: bigint;
+    employment_type: string;
+    created_at: Timestamp;
+    user_id?: UserId;
+    loan_amount: bigint;
+    loan_type: string;
+    income: bigint;
+    rejection_stage: bigint;
+    sanction_amount: bigint;
+    property_value: bigint;
+    distribution_partner: string;
+    disbursed_amount: bigint;
+    property_type: string;
+    is_active: boolean;
+    rejection_reason: string;
+    applicant_name: string;
 }
 export enum Role {
     admin = "admin",
@@ -199,7 +229,7 @@ export interface backendInterface {
         __kind__: "err";
         err: string;
     }>;
-    adminCreateLoan(token: string, applicantName: string, bankName: string, loanType: string, loanAmount: bigint, mobile: string, distributionPartner: string, coApplicantName: string, employmentType: string, income: bigint, propertyType: string, propertyValue: bigint): Promise<{
+    adminCreateLoan(token: string, applicantName: string, bankName: string, loanType: string, loanAmount: bigint, mobile: string, distributionPartner: string, coApplicantName: string, employmentType: string, income: bigint, propertyType: string, propertyValue: bigint, requiredAmount: bigint | null, sanctionAmount: bigint | null, disbursedAmount: bigint | null): Promise<{
         __kind__: "ok";
         ok: bigint;
     } | {
@@ -227,6 +257,13 @@ export interface backendInterface {
         __kind__: "err";
         err: string;
     }>;
+    adminDeleteUser(token: string, userId: bigint): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
     adminGetAllLoans(token: string, page: bigint, pageSize: bigint, search: string, stageFilter: bigint | null, assignedUserFilter: bigint | null): Promise<{
         __kind__: "ok";
         ok: PaginatedLoans;
@@ -244,6 +281,13 @@ export interface backendInterface {
     adminGetDashboardStats(token: string): Promise<{
         __kind__: "ok";
         ok: DashboardStats;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
+    adminGetDeletedLoans(token: string): Promise<{
+        __kind__: "ok";
+        ok: Array<LoanWithHistory>;
     } | {
         __kind__: "err";
         err: string;
@@ -276,6 +320,13 @@ export interface backendInterface {
         __kind__: "err";
         err: string;
     }>;
+    adminRestoreLoan(token: string, loanId: bigint): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
     adminUnrejectLoan(token: string, loanId: bigint): Promise<{
         __kind__: "ok";
         ok: null;
@@ -290,7 +341,7 @@ export interface backendInterface {
         __kind__: "err";
         err: string;
     }>;
-    adminUpdateLoan(token: string, loanId: bigint, applicantName: string, bankName: string, loanType: string, loanAmount: bigint): Promise<{
+    adminUpdateLoan(token: string, loanId: bigint, input: UpdateLoanInput): Promise<{
         __kind__: "ok";
         ok: null;
     } | {
@@ -300,6 +351,13 @@ export interface backendInterface {
     adminUpdateStage(token: string, loanId: bigint, stageIndex: bigint, remarks: string, showRemarks: boolean): Promise<{
         __kind__: "ok";
         ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
+    adminUpdateUserType(token: string, userId: bigint, userType: string): Promise<{
+        __kind__: "ok";
+        ok: PublicUser;
     } | {
         __kind__: "err";
         err: string;
@@ -325,6 +383,13 @@ export interface backendInterface {
         __kind__: "err";
         err: string;
     }>;
+    getUserDashboard(token: string): Promise<{
+        __kind__: "ok";
+        ok: UserDashboardStats;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
     sendOTP(mobile: string): Promise<string>;
     verifyOTP(mobile: string, otp: string): Promise<{
         __kind__: "ok";
@@ -339,7 +404,7 @@ export interface backendInterface {
         err: string;
     }>;
 }
-import type { DashboardStats as _DashboardStats, Document as _Document, LoanApplication as _LoanApplication, LoanStageHistory as _LoanStageHistory, LoanWithHistory as _LoanWithHistory, PaginatedLoans as _PaginatedLoans, PublicUser as _PublicUser, Role as _Role, Timestamp as _Timestamp, Token as _Token, UserId as _UserId } from "./declarations/backend.did.d.ts";
+import type { DashboardStats as _DashboardStats, Document as _Document, LoanApplication as _LoanApplication, LoanStageHistory as _LoanStageHistory, LoanWithHistory as _LoanWithHistory, PaginatedLoans as _PaginatedLoans, PublicUser as _PublicUser, Role as _Role, Timestamp as _Timestamp, Token as _Token, UpdateLoanInput as _UpdateLoanInput, UserDashboardStats as _UserDashboardStats, UserId as _UserId } from "./declarations/backend.did.d.ts";
 export class Backend implements backendInterface {
     constructor(private actor: ActorSubclass<_SERVICE>, private _uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, private _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, private processError?: (error: unknown) => never){}
     async adminAddDocument(arg0: string, arg1: UploadDocumentInput): Promise<{
@@ -422,7 +487,7 @@ export class Backend implements backendInterface {
             return from_candid_variant_n2(this._uploadFile, this._downloadFile, result);
         }
     }
-    async adminCreateLoan(arg0: string, arg1: string, arg2: string, arg3: string, arg4: bigint, arg5: string, arg6: string, arg7: string, arg8: string, arg9: bigint, arg10: string, arg11: bigint): Promise<{
+    async adminCreateLoan(arg0: string, arg1: string, arg2: string, arg3: string, arg4: bigint, arg5: string, arg6: string, arg7: string, arg8: string, arg9: bigint, arg10: string, arg11: bigint, arg12: bigint | null, arg13: bigint | null, arg14: bigint | null): Promise<{
         __kind__: "ok";
         ok: bigint;
     } | {
@@ -431,15 +496,15 @@ export class Backend implements backendInterface {
     }> {
         if (this.processError) {
             try {
-                const result = await this.actor.adminCreateLoan(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11);
-                return from_candid_variant_n3(this._uploadFile, this._downloadFile, result);
+                const result = await this.actor.adminCreateLoan(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11, to_candid_opt_n3(this._uploadFile, this._downloadFile, arg12), to_candid_opt_n3(this._uploadFile, this._downloadFile, arg13), to_candid_opt_n3(this._uploadFile, this._downloadFile, arg14));
+                return from_candid_variant_n4(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.adminCreateLoan(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11);
-            return from_candid_variant_n3(this._uploadFile, this._downloadFile, result);
+            const result = await this.actor.adminCreateLoan(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11, to_candid_opt_n3(this._uploadFile, this._downloadFile, arg12), to_candid_opt_n3(this._uploadFile, this._downloadFile, arg13), to_candid_opt_n3(this._uploadFile, this._downloadFile, arg14));
+            return from_candid_variant_n4(this._uploadFile, this._downloadFile, result);
         }
     }
     async adminCreateUser(arg0: string, arg1: string, arg2: string, arg3: string): Promise<{
@@ -452,14 +517,14 @@ export class Backend implements backendInterface {
         if (this.processError) {
             try {
                 const result = await this.actor.adminCreateUser(arg0, arg1, arg2, arg3);
-                return from_candid_variant_n4(this._uploadFile, this._downloadFile, result);
+                return from_candid_variant_n5(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.adminCreateUser(arg0, arg1, arg2, arg3);
-            return from_candid_variant_n4(this._uploadFile, this._downloadFile, result);
+            return from_candid_variant_n5(this._uploadFile, this._downloadFile, result);
         }
     }
     async adminDeleteDocument(arg0: string, arg1: bigint): Promise<{
@@ -472,14 +537,14 @@ export class Backend implements backendInterface {
         if (this.processError) {
             try {
                 const result = await this.actor.adminDeleteDocument(arg0, arg1);
-                return from_candid_variant_n9(this._uploadFile, this._downloadFile, result);
+                return from_candid_variant_n10(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.adminDeleteDocument(arg0, arg1);
-            return from_candid_variant_n9(this._uploadFile, this._downloadFile, result);
+            return from_candid_variant_n10(this._uploadFile, this._downloadFile, result);
         }
     }
     async adminDeleteLoan(arg0: string, arg1: bigint): Promise<{
@@ -502,6 +567,26 @@ export class Backend implements backendInterface {
             return from_candid_variant_n2(this._uploadFile, this._downloadFile, result);
         }
     }
+    async adminDeleteUser(arg0: string, arg1: bigint): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.adminDeleteUser(arg0, arg1);
+                return from_candid_variant_n2(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.adminDeleteUser(arg0, arg1);
+            return from_candid_variant_n2(this._uploadFile, this._downloadFile, result);
+        }
+    }
     async adminGetAllLoans(arg0: string, arg1: bigint, arg2: bigint, arg3: string, arg4: bigint | null, arg5: bigint | null): Promise<{
         __kind__: "ok";
         ok: PaginatedLoans;
@@ -511,14 +596,14 @@ export class Backend implements backendInterface {
     }> {
         if (this.processError) {
             try {
-                const result = await this.actor.adminGetAllLoans(arg0, arg1, arg2, arg3, to_candid_opt_n10(this._uploadFile, this._downloadFile, arg4), to_candid_opt_n10(this._uploadFile, this._downloadFile, arg5));
+                const result = await this.actor.adminGetAllLoans(arg0, arg1, arg2, arg3, to_candid_opt_n3(this._uploadFile, this._downloadFile, arg4), to_candid_opt_n3(this._uploadFile, this._downloadFile, arg5));
                 return from_candid_variant_n11(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.adminGetAllLoans(arg0, arg1, arg2, arg3, to_candid_opt_n10(this._uploadFile, this._downloadFile, arg4), to_candid_opt_n10(this._uploadFile, this._downloadFile, arg5));
+            const result = await this.actor.adminGetAllLoans(arg0, arg1, arg2, arg3, to_candid_opt_n3(this._uploadFile, this._downloadFile, arg4), to_candid_opt_n3(this._uploadFile, this._downloadFile, arg5));
             return from_candid_variant_n11(this._uploadFile, this._downloadFile, result);
         }
     }
@@ -562,6 +647,26 @@ export class Backend implements backendInterface {
             return from_candid_variant_n22(this._uploadFile, this._downloadFile, result);
         }
     }
+    async adminGetDeletedLoans(arg0: string): Promise<{
+        __kind__: "ok";
+        ok: Array<LoanWithHistory>;
+    } | {
+        __kind__: "err";
+        err: string;
+    }> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.adminGetDeletedLoans(arg0);
+                return from_candid_variant_n23(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.adminGetDeletedLoans(arg0);
+            return from_candid_variant_n23(this._uploadFile, this._downloadFile, result);
+        }
+    }
     async adminGetLoanDocuments(arg0: string, arg1: bigint): Promise<{
         __kind__: "ok";
         ok: Array<Document>;
@@ -572,14 +677,14 @@ export class Backend implements backendInterface {
         if (this.processError) {
             try {
                 const result = await this.actor.adminGetLoanDocuments(arg0, arg1);
-                return from_candid_variant_n23(this._uploadFile, this._downloadFile, result);
+                return from_candid_variant_n24(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.adminGetLoanDocuments(arg0, arg1);
-            return from_candid_variant_n23(this._uploadFile, this._downloadFile, result);
+            return from_candid_variant_n24(this._uploadFile, this._downloadFile, result);
         }
     }
     async adminGetUserById(arg0: string, arg1: bigint): Promise<{
@@ -592,14 +697,14 @@ export class Backend implements backendInterface {
         if (this.processError) {
             try {
                 const result = await this.actor.adminGetUserById(arg0, arg1);
-                return from_candid_variant_n24(this._uploadFile, this._downloadFile, result);
+                return from_candid_variant_n25(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.adminGetUserById(arg0, arg1);
-            return from_candid_variant_n24(this._uploadFile, this._downloadFile, result);
+            return from_candid_variant_n25(this._uploadFile, this._downloadFile, result);
         }
     }
     async adminRejectLoan(arg0: string, arg1: bigint, arg2: string): Promise<{
@@ -642,6 +747,26 @@ export class Backend implements backendInterface {
             return from_candid_variant_n2(this._uploadFile, this._downloadFile, result);
         }
     }
+    async adminRestoreLoan(arg0: string, arg1: bigint): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.adminRestoreLoan(arg0, arg1);
+                return from_candid_variant_n2(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.adminRestoreLoan(arg0, arg1);
+            return from_candid_variant_n2(this._uploadFile, this._downloadFile, result);
+        }
+    }
     async adminUnrejectLoan(arg0: string, arg1: bigint): Promise<{
         __kind__: "ok";
         ok: null;
@@ -672,17 +797,17 @@ export class Backend implements backendInterface {
         if (this.processError) {
             try {
                 const result = await this.actor.adminUpdateAdminMobile(arg0, arg1);
-                return from_candid_variant_n26(this._uploadFile, this._downloadFile, result);
+                return from_candid_variant_n27(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.adminUpdateAdminMobile(arg0, arg1);
-            return from_candid_variant_n26(this._uploadFile, this._downloadFile, result);
+            return from_candid_variant_n27(this._uploadFile, this._downloadFile, result);
         }
     }
-    async adminUpdateLoan(arg0: string, arg1: bigint, arg2: string, arg3: string, arg4: string, arg5: bigint): Promise<{
+    async adminUpdateLoan(arg0: string, arg1: bigint, arg2: UpdateLoanInput): Promise<{
         __kind__: "ok";
         ok: null;
     } | {
@@ -691,14 +816,14 @@ export class Backend implements backendInterface {
     }> {
         if (this.processError) {
             try {
-                const result = await this.actor.adminUpdateLoan(arg0, arg1, arg2, arg3, arg4, arg5);
+                const result = await this.actor.adminUpdateLoan(arg0, arg1, to_candid_UpdateLoanInput_n28(this._uploadFile, this._downloadFile, arg2));
                 return from_candid_variant_n2(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.adminUpdateLoan(arg0, arg1, arg2, arg3, arg4, arg5);
+            const result = await this.actor.adminUpdateLoan(arg0, arg1, to_candid_UpdateLoanInput_n28(this._uploadFile, this._downloadFile, arg2));
             return from_candid_variant_n2(this._uploadFile, this._downloadFile, result);
         }
     }
@@ -722,6 +847,26 @@ export class Backend implements backendInterface {
             return from_candid_variant_n2(this._uploadFile, this._downloadFile, result);
         }
     }
+    async adminUpdateUserType(arg0: string, arg1: bigint, arg2: string): Promise<{
+        __kind__: "ok";
+        ok: PublicUser;
+    } | {
+        __kind__: "err";
+        err: string;
+    }> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.adminUpdateUserType(arg0, arg1, arg2);
+                return from_candid_variant_n5(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.adminUpdateUserType(arg0, arg1, arg2);
+            return from_candid_variant_n5(this._uploadFile, this._downloadFile, result);
+        }
+    }
     async getLoanById(arg0: string, arg1: bigint): Promise<{
         __kind__: "ok";
         ok: LoanWithHistory;
@@ -732,14 +877,14 @@ export class Backend implements backendInterface {
         if (this.processError) {
             try {
                 const result = await this.actor.getLoanById(arg0, arg1);
-                return from_candid_variant_n27(this._uploadFile, this._downloadFile, result);
+                return from_candid_variant_n30(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.getLoanById(arg0, arg1);
-            return from_candid_variant_n27(this._uploadFile, this._downloadFile, result);
+            return from_candid_variant_n30(this._uploadFile, this._downloadFile, result);
         }
     }
     async getLoanDocuments(arg0: string, arg1: bigint): Promise<{
@@ -752,14 +897,14 @@ export class Backend implements backendInterface {
         if (this.processError) {
             try {
                 const result = await this.actor.getLoanDocuments(arg0, arg1);
-                return from_candid_variant_n23(this._uploadFile, this._downloadFile, result);
+                return from_candid_variant_n24(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.getLoanDocuments(arg0, arg1);
-            return from_candid_variant_n23(this._uploadFile, this._downloadFile, result);
+            return from_candid_variant_n24(this._uploadFile, this._downloadFile, result);
         }
     }
     async getMyLoans(arg0: string): Promise<{
@@ -772,14 +917,34 @@ export class Backend implements backendInterface {
         if (this.processError) {
             try {
                 const result = await this.actor.getMyLoans(arg0);
-                return from_candid_variant_n28(this._uploadFile, this._downloadFile, result);
+                return from_candid_variant_n23(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.getMyLoans(arg0);
-            return from_candid_variant_n28(this._uploadFile, this._downloadFile, result);
+            return from_candid_variant_n23(this._uploadFile, this._downloadFile, result);
+        }
+    }
+    async getUserDashboard(arg0: string): Promise<{
+        __kind__: "ok";
+        ok: UserDashboardStats;
+    } | {
+        __kind__: "err";
+        err: string;
+    }> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getUserDashboard(arg0);
+                return from_candid_variant_n31(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getUserDashboard(arg0);
+            return from_candid_variant_n31(this._uploadFile, this._downloadFile, result);
         }
     }
     async sendOTP(arg0: string): Promise<string> {
@@ -811,14 +976,14 @@ export class Backend implements backendInterface {
         if (this.processError) {
             try {
                 const result = await this.actor.verifyOTP(arg0, arg1);
-                return from_candid_variant_n29(this._uploadFile, this._downloadFile, result);
+                return from_candid_variant_n35(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.verifyOTP(arg0, arg1);
-            return from_candid_variant_n29(this._uploadFile, this._downloadFile, result);
+            return from_candid_variant_n35(this._uploadFile, this._downloadFile, result);
         }
     }
 }
@@ -831,17 +996,20 @@ function from_candid_LoanWithHistory_n15(_uploadFile: (file: ExternalBlob) => Pr
 function from_candid_PaginatedLoans_n12(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _PaginatedLoans): PaginatedLoans {
     return from_candid_record_n13(_uploadFile, _downloadFile, value);
 }
-function from_candid_PublicUser_n5(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _PublicUser): PublicUser {
-    return from_candid_record_n6(_uploadFile, _downloadFile, value);
+function from_candid_PublicUser_n6(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _PublicUser): PublicUser {
+    return from_candid_record_n7(_uploadFile, _downloadFile, value);
 }
-function from_candid_Role_n7(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _Role): Role {
-    return from_candid_variant_n8(_uploadFile, _downloadFile, value);
+function from_candid_Role_n8(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _Role): Role {
+    return from_candid_variant_n9(_uploadFile, _downloadFile, value);
+}
+function from_candid_UserDashboardStats_n32(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _UserDashboardStats): UserDashboardStats {
+    return from_candid_record_n33(_uploadFile, _downloadFile, value);
 }
 function from_candid_opt_n19(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_UserId]): UserId | null {
     return value.length === 0 ? null : value[0];
 }
-function from_candid_opt_n25(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_PublicUser]): PublicUser | null {
-    return value.length === 0 ? null : from_candid_PublicUser_n5(_uploadFile, _downloadFile, value[0]);
+function from_candid_opt_n26(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_PublicUser]): PublicUser | null {
+    return value.length === 0 ? null : from_candid_PublicUser_n6(_uploadFile, _downloadFile, value[0]);
 }
 function from_candid_record_n13(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
     total: bigint;
@@ -883,6 +1051,7 @@ function from_candid_record_n18(_uploadFile: (file: ExternalBlob) => Promise<Uin
     updated_at: _Timestamp;
     current_stage: bigint;
     is_rejected: boolean;
+    required_amount: bigint;
     employment_type: string;
     created_at: _Timestamp;
     user_id: [] | [_UserId];
@@ -890,8 +1059,10 @@ function from_candid_record_n18(_uploadFile: (file: ExternalBlob) => Promise<Uin
     loan_type: string;
     income: bigint;
     rejection_stage: bigint;
+    sanction_amount: bigint;
     property_value: bigint;
     distribution_partner: string;
+    disbursed_amount: bigint;
     property_type: string;
     is_active: boolean;
     rejection_reason: string;
@@ -903,6 +1074,7 @@ function from_candid_record_n18(_uploadFile: (file: ExternalBlob) => Promise<Uin
     updated_at: Timestamp;
     current_stage: bigint;
     is_rejected: boolean;
+    required_amount: bigint;
     employment_type: string;
     created_at: Timestamp;
     user_id?: UserId;
@@ -910,8 +1082,10 @@ function from_candid_record_n18(_uploadFile: (file: ExternalBlob) => Promise<Uin
     loan_type: string;
     income: bigint;
     rejection_stage: bigint;
+    sanction_amount: bigint;
     property_value: bigint;
     distribution_partner: string;
+    disbursed_amount: bigint;
     property_type: string;
     is_active: boolean;
     rejection_reason: string;
@@ -924,6 +1098,7 @@ function from_candid_record_n18(_uploadFile: (file: ExternalBlob) => Promise<Uin
         updated_at: value.updated_at,
         current_stage: value.current_stage,
         is_rejected: value.is_rejected,
+        required_amount: value.required_amount,
         employment_type: value.employment_type,
         created_at: value.created_at,
         user_id: record_opt_to_undefined(from_candid_opt_n19(_uploadFile, _downloadFile, value.user_id)),
@@ -931,27 +1106,59 @@ function from_candid_record_n18(_uploadFile: (file: ExternalBlob) => Promise<Uin
         loan_type: value.loan_type,
         income: value.income,
         rejection_stage: value.rejection_stage,
+        sanction_amount: value.sanction_amount,
         property_value: value.property_value,
         distribution_partner: value.distribution_partner,
+        disbursed_amount: value.disbursed_amount,
         property_type: value.property_type,
         is_active: value.is_active,
         rejection_reason: value.rejection_reason,
         applicant_name: value.applicant_name
     };
 }
-function from_candid_record_n6(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+function from_candid_record_n33(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+    total_loans: bigint;
+    total_sanctioned_amount: bigint;
+    stage_breakdown: Array<[string, bigint]>;
+    recent_loans: Array<_LoanApplication>;
+    active_loans: bigint;
+    total_value: bigint;
+    total_disbursed_amount: bigint;
+}): {
+    total_loans: bigint;
+    total_sanctioned_amount: bigint;
+    stage_breakdown: Array<[string, bigint]>;
+    recent_loans: Array<LoanApplication>;
+    active_loans: bigint;
+    total_value: bigint;
+    total_disbursed_amount: bigint;
+} {
+    return {
+        total_loans: value.total_loans,
+        total_sanctioned_amount: value.total_sanctioned_amount,
+        stage_breakdown: value.stage_breakdown,
+        recent_loans: from_candid_vec_n34(_uploadFile, _downloadFile, value.recent_loans),
+        active_loans: value.active_loans,
+        total_value: value.total_value,
+        total_disbursed_amount: value.total_disbursed_amount
+    };
+}
+function from_candid_record_n7(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
     id: _UserId;
+    user_type: string;
     name: string;
     role: _Role;
 }): {
     id: UserId;
+    user_type: string;
     name: string;
     role: Role;
 } {
     return {
         id: value.id,
+        user_type: value.user_type,
         name: value.name,
-        role: from_candid_Role_n7(_uploadFile, _downloadFile, value.role)
+        role: from_candid_Role_n8(_uploadFile, _downloadFile, value.role)
     };
 }
 function from_candid_variant_n1(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
@@ -961,6 +1168,25 @@ function from_candid_variant_n1(_uploadFile: (file: ExternalBlob) => Promise<Uin
 }): {
     __kind__: "ok";
     ok: Document;
+} | {
+    __kind__: "err";
+    err: string;
+} {
+    return "ok" in value ? {
+        __kind__: "ok",
+        ok: value.ok
+    } : "err" in value ? {
+        __kind__: "err",
+        err: value.err
+    } : value;
+}
+function from_candid_variant_n10(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+    ok: boolean;
+} | {
+    err: string;
+}): {
+    __kind__: "ok";
+    ok: boolean;
 } | {
     __kind__: "err";
     err: string;
@@ -1050,82 +1276,6 @@ function from_candid_variant_n22(_uploadFile: (file: ExternalBlob) => Promise<Ui
     } : value;
 }
 function from_candid_variant_n23(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
-    ok: Array<_Document>;
-} | {
-    err: string;
-}): {
-    __kind__: "ok";
-    ok: Array<Document>;
-} | {
-    __kind__: "err";
-    err: string;
-} {
-    return "ok" in value ? {
-        __kind__: "ok",
-        ok: value.ok
-    } : "err" in value ? {
-        __kind__: "err",
-        err: value.err
-    } : value;
-}
-function from_candid_variant_n24(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
-    ok: [] | [_PublicUser];
-} | {
-    err: string;
-}): {
-    __kind__: "ok";
-    ok: PublicUser | null;
-} | {
-    __kind__: "err";
-    err: string;
-} {
-    return "ok" in value ? {
-        __kind__: "ok",
-        ok: from_candid_opt_n25(_uploadFile, _downloadFile, value.ok)
-    } : "err" in value ? {
-        __kind__: "err",
-        err: value.err
-    } : value;
-}
-function from_candid_variant_n26(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
-    ok: string;
-} | {
-    err: string;
-}): {
-    __kind__: "ok";
-    ok: string;
-} | {
-    __kind__: "err";
-    err: string;
-} {
-    return "ok" in value ? {
-        __kind__: "ok",
-        ok: value.ok
-    } : "err" in value ? {
-        __kind__: "err",
-        err: value.err
-    } : value;
-}
-function from_candid_variant_n27(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
-    ok: _LoanWithHistory;
-} | {
-    err: string;
-}): {
-    __kind__: "ok";
-    ok: LoanWithHistory;
-} | {
-    __kind__: "err";
-    err: string;
-} {
-    return "ok" in value ? {
-        __kind__: "ok",
-        ok: from_candid_LoanWithHistory_n15(_uploadFile, _downloadFile, value.ok)
-    } : "err" in value ? {
-        __kind__: "err",
-        err: value.err
-    } : value;
-}
-function from_candid_variant_n28(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
     ok: Array<_LoanWithHistory>;
 } | {
     err: string;
@@ -1144,7 +1294,102 @@ function from_candid_variant_n28(_uploadFile: (file: ExternalBlob) => Promise<Ui
         err: value.err
     } : value;
 }
-function from_candid_variant_n29(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+function from_candid_variant_n24(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+    ok: Array<_Document>;
+} | {
+    err: string;
+}): {
+    __kind__: "ok";
+    ok: Array<Document>;
+} | {
+    __kind__: "err";
+    err: string;
+} {
+    return "ok" in value ? {
+        __kind__: "ok",
+        ok: value.ok
+    } : "err" in value ? {
+        __kind__: "err",
+        err: value.err
+    } : value;
+}
+function from_candid_variant_n25(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+    ok: [] | [_PublicUser];
+} | {
+    err: string;
+}): {
+    __kind__: "ok";
+    ok: PublicUser | null;
+} | {
+    __kind__: "err";
+    err: string;
+} {
+    return "ok" in value ? {
+        __kind__: "ok",
+        ok: from_candid_opt_n26(_uploadFile, _downloadFile, value.ok)
+    } : "err" in value ? {
+        __kind__: "err",
+        err: value.err
+    } : value;
+}
+function from_candid_variant_n27(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+    ok: string;
+} | {
+    err: string;
+}): {
+    __kind__: "ok";
+    ok: string;
+} | {
+    __kind__: "err";
+    err: string;
+} {
+    return "ok" in value ? {
+        __kind__: "ok",
+        ok: value.ok
+    } : "err" in value ? {
+        __kind__: "err",
+        err: value.err
+    } : value;
+}
+function from_candid_variant_n30(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+    ok: _LoanWithHistory;
+} | {
+    err: string;
+}): {
+    __kind__: "ok";
+    ok: LoanWithHistory;
+} | {
+    __kind__: "err";
+    err: string;
+} {
+    return "ok" in value ? {
+        __kind__: "ok",
+        ok: from_candid_LoanWithHistory_n15(_uploadFile, _downloadFile, value.ok)
+    } : "err" in value ? {
+        __kind__: "err",
+        err: value.err
+    } : value;
+}
+function from_candid_variant_n31(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+    ok: _UserDashboardStats;
+} | {
+    err: string;
+}): {
+    __kind__: "ok";
+    ok: UserDashboardStats;
+} | {
+    __kind__: "err";
+    err: string;
+} {
+    return "ok" in value ? {
+        __kind__: "ok",
+        ok: from_candid_UserDashboardStats_n32(_uploadFile, _downloadFile, value.ok)
+    } : "err" in value ? {
+        __kind__: "err",
+        err: value.err
+    } : value;
+}
+function from_candid_variant_n35(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
     ok: {
         token: _Token;
         userId: _UserId;
@@ -1173,7 +1418,7 @@ function from_candid_variant_n29(_uploadFile: (file: ExternalBlob) => Promise<Ui
         err: value.err
     } : value;
 }
-function from_candid_variant_n3(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+function from_candid_variant_n4(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
     ok: bigint;
 } | {
     err: string;
@@ -1192,7 +1437,7 @@ function from_candid_variant_n3(_uploadFile: (file: ExternalBlob) => Promise<Uin
         err: value.err
     } : value;
 }
-function from_candid_variant_n4(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+function from_candid_variant_n5(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
     ok: _PublicUser;
 } | {
     err: string;
@@ -1205,46 +1450,78 @@ function from_candid_variant_n4(_uploadFile: (file: ExternalBlob) => Promise<Uin
 } {
     return "ok" in value ? {
         __kind__: "ok",
-        ok: from_candid_PublicUser_n5(_uploadFile, _downloadFile, value.ok)
+        ok: from_candid_PublicUser_n6(_uploadFile, _downloadFile, value.ok)
     } : "err" in value ? {
         __kind__: "err",
         err: value.err
     } : value;
 }
-function from_candid_variant_n8(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+function from_candid_variant_n9(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
     admin: null;
 } | {
     user: null;
 }): Role {
     return "admin" in value ? Role.admin : "user" in value ? Role.user : value;
 }
-function from_candid_variant_n9(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
-    ok: boolean;
-} | {
-    err: string;
-}): {
-    __kind__: "ok";
-    ok: boolean;
-} | {
-    __kind__: "err";
-    err: string;
-} {
-    return "ok" in value ? {
-        __kind__: "ok",
-        ok: value.ok
-    } : "err" in value ? {
-        __kind__: "err",
-        err: value.err
-    } : value;
-}
 function from_candid_vec_n14(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_LoanWithHistory>): Array<LoanWithHistory> {
     return value.map((x)=>from_candid_LoanWithHistory_n15(_uploadFile, _downloadFile, x));
 }
 function from_candid_vec_n21(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_PublicUser>): Array<PublicUser> {
-    return value.map((x)=>from_candid_PublicUser_n5(_uploadFile, _downloadFile, x));
+    return value.map((x)=>from_candid_PublicUser_n6(_uploadFile, _downloadFile, x));
 }
-function to_candid_opt_n10(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: bigint | null): [] | [bigint] {
+function from_candid_vec_n34(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_LoanApplication>): Array<LoanApplication> {
+    return value.map((x)=>from_candid_LoanApplication_n17(_uploadFile, _downloadFile, x));
+}
+function to_candid_UpdateLoanInput_n28(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: UpdateLoanInput): _UpdateLoanInput {
+    return to_candid_record_n29(_uploadFile, _downloadFile, value);
+}
+function to_candid_opt_n3(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: bigint | null): [] | [bigint] {
     return value === null ? candid_none() : candid_some(value);
+}
+function to_candid_record_n29(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+    co_applicant_name?: string;
+    bank_name?: string;
+    required_amount?: bigint;
+    employment_type?: string;
+    loan_amount?: bigint;
+    loan_type?: string;
+    income?: bigint;
+    sanction_amount?: bigint;
+    property_value?: bigint;
+    distribution_partner?: string;
+    disbursed_amount?: bigint;
+    property_type?: string;
+    applicant_name?: string;
+}): {
+    co_applicant_name: [] | [string];
+    bank_name: [] | [string];
+    required_amount: [] | [bigint];
+    employment_type: [] | [string];
+    loan_amount: [] | [bigint];
+    loan_type: [] | [string];
+    income: [] | [bigint];
+    sanction_amount: [] | [bigint];
+    property_value: [] | [bigint];
+    distribution_partner: [] | [string];
+    disbursed_amount: [] | [bigint];
+    property_type: [] | [string];
+    applicant_name: [] | [string];
+} {
+    return {
+        co_applicant_name: value.co_applicant_name ? candid_some(value.co_applicant_name) : candid_none(),
+        bank_name: value.bank_name ? candid_some(value.bank_name) : candid_none(),
+        required_amount: value.required_amount ? candid_some(value.required_amount) : candid_none(),
+        employment_type: value.employment_type ? candid_some(value.employment_type) : candid_none(),
+        loan_amount: value.loan_amount ? candid_some(value.loan_amount) : candid_none(),
+        loan_type: value.loan_type ? candid_some(value.loan_type) : candid_none(),
+        income: value.income ? candid_some(value.income) : candid_none(),
+        sanction_amount: value.sanction_amount ? candid_some(value.sanction_amount) : candid_none(),
+        property_value: value.property_value ? candid_some(value.property_value) : candid_none(),
+        distribution_partner: value.distribution_partner ? candid_some(value.distribution_partner) : candid_none(),
+        disbursed_amount: value.disbursed_amount ? candid_some(value.disbursed_amount) : candid_none(),
+        property_type: value.property_type ? candid_some(value.property_type) : candid_none(),
+        applicant_name: value.applicant_name ? candid_some(value.applicant_name) : candid_none()
+    };
 }
 export interface CreateActorOptions {
     agent?: Agent;

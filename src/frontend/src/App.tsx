@@ -1,4 +1,5 @@
 import { Suspense, lazy, useEffect, useState } from "react";
+import { InstallPWA } from "./components/InstallPWA";
 import { AdminLayout } from "./components/Layout/AdminLayout";
 import { CustomerLayout } from "./components/Layout/CustomerLayout";
 import { isAdmin, isLoggedIn } from "./lib/auth";
@@ -19,7 +20,9 @@ const CustomerDashboardPage = lazy(
 function getPath(): string {
   const hash = window.location.hash;
   if (!hash || hash === "#" || hash === "#/") return "/";
-  return hash.replace(/^#/, "");
+  // Strip query string so route matching works on clean path,
+  // but MyLoansPage can still read window.location.hash for filter params.
+  return hash.replace(/^#/, "").split("?")[0];
 }
 
 function Spinner() {
@@ -110,6 +113,7 @@ export default function App() {
 
   return (
     <Suspense fallback={<Spinner />}>
+      <InstallPWA />
       {path === "/login" && <LoginPage />}
 
       {path === "/admin/dashboard" && (

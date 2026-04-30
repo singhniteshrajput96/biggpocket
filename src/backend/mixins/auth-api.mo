@@ -4,13 +4,15 @@ import Text "mo:core/Text";
 import Time "mo:core/Time";
 import AuthLib "../lib/auth";
 import AuthTypes "../types/auth";
+import LoanTypes "../types/loans";
 import Common "../types/common";
 
 mixin (
   users : List.List<AuthTypes.User>,
   sessions : Map.Map<Common.Token, AuthTypes.Session>,
   otps : Map.Map<Text, AuthTypes.OTPEntry>,
-  nextUserIdRef : [var Nat]
+  nextUserIdRef : [var Nat],
+  loanAssignments : List.List<LoanTypes.LoanAssignment>
 ) {
   public func sendOTP(mobile : Text) : async Text {
     let now = Time.now();
@@ -42,6 +44,7 @@ mixin (
               name = name;
               mobile_number = mobile;
               role = userRole;
+              user_type = "internal";   // all newly created users default to internal
               created_at = now;
             };
             users.add(newUser);
@@ -96,6 +99,22 @@ mixin (
         }
       };
     }
+  };
+
+  // Update a user's type: "internal" or "external" (admin only)
+  public func adminUpdateUserType(token : Text, userId : Nat, userType : Text) : async {
+    #ok : AuthTypes.PublicUser;
+    #err : Text;
+  } {
+    AuthLib.adminUpdateUserType(token, userId, userType, sessions, users)
+  };
+
+  // Delete a user — blocked if user has any active loan assignments
+  public func adminDeleteUser(token : Text, userId : Nat) : async {
+    #ok : ();
+    #err : Text;
+  } {
+    AuthLib.adminDeleteUser(token, userId, sessions, users, loanAssignments)
   };
 
   public func verifyOTP(mobile : Text, otp : Text) : async {

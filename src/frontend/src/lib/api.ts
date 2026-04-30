@@ -56,6 +56,9 @@ function mapLoan(l: BELoanApplication): LoanApplication {
     isRejected: l.is_rejected,
     rejectionReason: l.rejection_reason || undefined,
     rejectionStage: Number(l.rejection_stage) || undefined,
+    requiredAmount: Number(l.required_amount) || undefined,
+    sanctionAmount: Number(l.sanction_amount) || undefined,
+    disbursedAmount: Number(l.disbursed_amount) || undefined,
   };
 }
 
@@ -92,6 +95,8 @@ function mapDashboardStats(stats: BEDashboardStats): DashboardStats {
     disbursementPercent: stats.disbursement_percent,
     dropoffRate: stats.dropoff_rate,
     recentActivity: stats.recent_activity.map(mapStageHistory),
+    totalDisbursedAmount: Number(stats.total_disbursed_amount),
+    totalSanctionedAmount: Number(stats.total_sanctioned_amount),
   };
 }
 
@@ -112,6 +117,7 @@ function mapPublicUser(u: BEPublicUser): PublicUser {
     id: Number(u.id),
     name: u.name,
     role: u.role,
+    user_type: u.user_type || "internal",
   };
 }
 
@@ -168,6 +174,9 @@ export async function adminCreateLoan(
   income = 0,
   propertyType = "",
   propertyValue = 0,
+  requiredAmount: number | null = null,
+  sanctionAmount: number | null = null,
+  disbursedAmount: number | null = null,
 ): Promise<number> {
   const result = await actor.adminCreateLoan(
     token,
@@ -182,6 +191,9 @@ export async function adminCreateLoan(
     BigInt(income),
     propertyType,
     BigInt(propertyValue),
+    requiredAmount !== null ? BigInt(requiredAmount) : null,
+    sanctionAmount !== null ? BigInt(sanctionAmount) : null,
+    disbursedAmount !== null ? BigInt(disbursedAmount) : null,
   );
   if (result.__kind__ === "err") throw new Error(result.err);
   return Number(result.ok);
@@ -262,15 +274,22 @@ export async function adminUpdateLoan(
   bankName: string,
   loanType: string,
   loanAmount: number,
+  sanctionAmount?: number,
+  disbursedAmount?: number,
+  requiredAmount?: number,
 ): Promise<void> {
-  const result = await actor.adminUpdateLoan(
-    token,
-    BigInt(loanId),
-    applicantName,
-    bankName,
-    loanType,
-    BigInt(loanAmount),
-  );
+  const result = await actor.adminUpdateLoan(token, BigInt(loanId), {
+    applicant_name: applicantName,
+    bank_name: bankName,
+    loan_type: loanType,
+    loan_amount: BigInt(loanAmount),
+    sanction_amount:
+      sanctionAmount !== undefined ? BigInt(sanctionAmount) : undefined,
+    disbursed_amount:
+      disbursedAmount !== undefined ? BigInt(disbursedAmount) : undefined,
+    required_amount:
+      requiredAmount !== undefined ? BigInt(requiredAmount) : undefined,
+  });
   if (result.__kind__ === "err") throw new Error(result.err);
 }
 
@@ -280,13 +299,14 @@ export async function adminCreateUser(
   name: string,
   mobile: string,
   role: "admin" | "user",
-): Promise<{ id: number; name: string; role: string }> {
+): Promise<{ id: number; name: string; role: string; user_type: string }> {
   const result = await actor.adminCreateUser(token, name, mobile, role);
   if (result.__kind__ === "err") throw new Error(result.err);
   return {
     id: Number(result.ok.id),
     name: result.ok.name,
     role: result.ok.role,
+    user_type: result.ok.user_type || "internal",
   };
 }
 
@@ -421,34 +441,66 @@ export async function adminUnrejectLoan(
   return { ok: true };
 }
 
+export async function adminUpdateUserType(
+  actor: Backend,
+  token: string,
+  userId: number,
+  userType: string,
+): Promise<{ ok: boolean; err?: string; user?: PublicUser }> {
+  const result = await actor.adminUpdateUserType(
+    token,
+    BigInt(userId),
+    userType,
+  );
+  if (result.__kind__ === "err") return { ok: false, err: result.err };
+  return { ok: true, user: mapPublicUser(result.ok) };
+}
+
+export async function adminDeleteUser(
+  actor: Backend,
+  token: string,
+  userId: number,
+): Promise<{ ok: boolean; err?: string }> {
+  const result = await actor.adminDeleteUser(token, BigInt(userId));
+  if (result.__kind__ === "err") return { ok: false, err: result.err };
+  return { ok: true };
+}
+
+export async function adminGetDeletedLoans(
+  actor: Backend,
+  token: string,
+): Promise<LoanWithHistory[]> {
+  const result = await actor.adminGetDeletedLoans(token);
+  if (result.__kind__ === "err") throw new Error(result.err);
+  return result.ok.map(mapLoanWithHistory);
+}
+
+export async function adminRestoreLoan(
+  actor: Backend,
+  token: string,
+  loanId: number,
+): Promise<void> {
+  const result = await actor.adminRestoreLoan(token, BigInt(loanId));
+  if (result.__kind__ === "err") throw new Error(result.err);
+}
+
 export async function getUserDashboard(
   actor: Backend,
   token: string,
 ): Promise<UserDashboardStats> {
-  // Compute user dashboard from getMyLoans since no dedicated backend endpoint exists
-  const result = await actor.getMyLoans(token);
+  // Use the dedicated backend endpoint if available
+  const result = await actor.getUserDashboard(token);
   if (result.__kind__ === "err") throw new Error(result.err);
-  const loans = result.ok.map((lh) => mapLoan(lh.loan));
-
-  const activeLoans = loans.filter((l) => l.isActive && !l.isRejected).length;
-  const totalValue = loans.reduce((sum, l) => sum + l.loanAmount, 0);
-
-  const stageMap = new Map<string, number>();
-  for (const loan of loans) {
-    if (!loan.isRejected) {
-      const stageName =
-        loan.currentStage >= 0 ? `Stage ${loan.currentStage + 1}` : "Unknown";
-      stageMap.set(stageName, (stageMap.get(stageName) ?? 0) + 1);
-    }
-  }
-
-  const recentLoans = loans.slice(-5).reverse();
-
+  const stats = result.ok;
   return {
-    total_loans: loans.length,
-    total_value: totalValue,
-    active_loans: activeLoans,
-    stage_breakdown: Array.from(stageMap.entries()),
-    recent_loans: recentLoans,
+    total_loans: Number(stats.total_loans),
+    total_value: Number(stats.total_value),
+    active_loans: Number(stats.active_loans),
+    stage_breakdown: stats.stage_breakdown.map(
+      ([name, count]) => [name, Number(count)] as [string, number],
+    ),
+    recent_loans: stats.recent_loans.map(mapLoan),
+    totalDisbursedAmount: Number(stats.total_disbursed_amount),
+    totalSanctionedAmount: Number(stats.total_sanctioned_amount),
   };
 }

@@ -318,6 +318,72 @@ export default function LoanTrackerPage({ loanId }: LoanTrackerPageProps) {
                 value={data.loan.applicantName}
               />
             </div>
+
+            {/* Financial summary — shown only when values are set */}
+            {((data.loan.requiredAmount ?? 0) > 0 ||
+              (data.loan.sanctionAmount ?? 0) > 0 ||
+              (data.loan.disbursedAmount ?? 0) > 0) && (
+              <div className="mt-4 pt-4 border-t border-border grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {(data.loan.requiredAmount ?? 0) > 0 && (
+                  <div className="flex items-start gap-3">
+                    <div
+                      className="mt-0.5 w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                      style={{ backgroundColor: "#eff6ff" }}
+                    >
+                      <IndianRupee size={15} style={{ color: "#3b82f6" }} />
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">
+                        Required Amount
+                      </p>
+                      <p className="text-sm font-medium text-foreground">
+                        {formatCurrency(data.loan.requiredAmount!)}
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {(data.loan.sanctionAmount ?? 0) > 0 && (
+                  <div className="flex items-start gap-3">
+                    <div
+                      className="mt-0.5 w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                      style={{ backgroundColor: "#fff7ed" }}
+                    >
+                      <IndianRupee size={15} style={{ color: "#f97316" }} />
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">
+                        Sanctioned Amount
+                      </p>
+                      <p className="text-sm font-medium text-foreground">
+                        {formatCurrency(data.loan.sanctionAmount!)}
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {(data.loan.disbursedAmount ?? 0) > 0 && (
+                  <div className="flex items-start gap-3">
+                    <div
+                      className="mt-0.5 w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                      style={{ backgroundColor: "#f0fdf4" }}
+                    >
+                      <IndianRupee size={15} style={{ color: "#16a34a" }} />
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">
+                        Disbursed Amount
+                      </p>
+                      <p
+                        className="text-sm font-semibold"
+                        style={{ color: "#16a34a" }}
+                      >
+                        {formatCurrency(data.loan.disbursedAmount!)}
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="mt-4 pt-4 border-t border-border">
               <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
                 <span className="flex items-center gap-1.5">

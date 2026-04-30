@@ -96,6 +96,14 @@ function formatTs(ts: number): string {
 
 // ─── Clickable Stat Card ──────────────────────────────────────────────────────
 
+function formatIndianCurrency(amount: number): string {
+  if (amount === 0) return "₹0";
+  if (amount >= 1_00_00_000) return `₹${(amount / 1_00_00_000).toFixed(2)}Cr`;
+  if (amount >= 1_00_000) return `₹${(amount / 1_00_000).toFixed(2)}L`;
+  if (amount >= 1_000) return `₹${(amount / 1_000).toFixed(1)}K`;
+  return `₹${amount.toLocaleString("en-IN")}`;
+}
+
 interface StatCardProps {
   label: string;
   value: number;
@@ -105,6 +113,7 @@ interface StatCardProps {
   iconColor: string;
   accentColor: string;
   filterParam: string;
+  isCurrency?: boolean;
 }
 
 function StatCard({
@@ -116,7 +125,11 @@ function StatCard({
   iconColor,
   accentColor,
   filterParam,
+  isCurrency = false,
 }: StatCardProps) {
+  const displayValue = isCurrency
+    ? formatIndianCurrency(value)
+    : value.toLocaleString("en-IN");
   return (
     <button
       type="button"
@@ -134,8 +147,8 @@ function StatCard({
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
                 {label}
               </p>
-              <p className="text-3xl font-display font-bold text-foreground leading-none tabular-nums">
-                {value.toLocaleString("en-IN")}
+              <p className="text-2xl font-display font-bold text-foreground leading-none tabular-nums truncate">
+                {displayValue}
               </p>
               <div
                 className="mt-2 flex items-center gap-1 text-xs font-medium transition-smooth group-hover:gap-2"
@@ -786,22 +799,23 @@ export default function DashboardPage() {
   } = useAdminGetDashboardStats();
 
   // Users query is non-fatal — if it fails, dashboard still renders with empty team data
-  const {
-    data: users,
-    isLoading: usersLoading,
-    isError: usersError,
-  } = useAdminGetAllUsers();
+  const { data: users, isError: usersError } = useAdminGetAllUsers();
 
-  // Show skeleton while EITHER query is actively loading for the first time
-  const isLoading = statsLoading || usersLoading;
-  const isPending = statsStatus === "pending" && !statsError;
+  // Show skeleton while stats are loading for the first time OR still pending
+  // isPending = query is in "pending" state (no cached data yet, not yet succeeded)
+  // statsLoading = isLoading from react-query (pending + no data)
+  // We deliberately do NOT block on usersLoading — users query is non-fatal
+  const isInitialLoad =
+    statsLoading || (statsStatus === "pending" && !statsError);
 
-  if (isLoading || isPending) {
+  if (isInitialLoad) {
     return <DashboardSkeleton />;
   }
 
-  // Only show fatal error when the PRIMARY (stats) query fails — not when users fails
-  if (statsError || !stats) {
+  // Only show fatal error when statsError is explicitly true AND we have no cached stats to fall back on.
+  // Do NOT treat stats===undefined as an error — it just means the query hasn't resolved yet (covered above).
+  // This prevents the error screen from flashing on desktop where actor init is slower.
+  if (statsError && !stats) {
     return (
       <div className="max-w-7xl mx-auto px-4 py-16 text-center space-y-4">
         <AlertTriangle
@@ -829,6 +843,11 @@ export default function DashboardPage() {
     );
   }
 
+  // If stats is still undefined here (e.g. error happened but no data) show skeleton
+  if (!stats) {
+    return <DashboardSkeleton />;
+  }
+
   // If users query failed, fall back to empty array — dashboard renders normally
   const safeUsers = usersError ? [] : users;
 
@@ -844,7 +863,7 @@ export default function DashboardPage() {
         </p>
       </div>
 
-      {/* ── Clickable stat cards (5 cards) ── */}
+      {/* ── Clickable stat cards (5 count cards) ── */}
       <div
         className="grid grid-cols-2 lg:grid-cols-5 gap-4"
         data-ocid="dashboard-stats-row"
@@ -898,6 +917,35 @@ export default function DashboardPage() {
           iconColor={REJECTED_RED}
           accentColor={REJECTED_RED}
           filterParam="#/admin/loans?filter=rejected"
+        />
+      </div>
+
+      {/* ── Amount stat cards (2 currency cards) ── */}
+      <div
+        className="grid grid-cols-1 sm:grid-cols-2 gap-4"
+        data-ocid="dashboard-amount-stats-row"
+      >
+        <StatCard
+          label="Total Disbursed Amount"
+          value={stats.totalDisbursedAmount}
+          sub="Total amount disbursed"
+          icon={<IndianRupee size={18} />}
+          iconBg="#f0fdf4"
+          iconColor="#22c55e"
+          accentColor="#22c55e"
+          filterParam="#/admin/loans?filter=disbursed"
+          isCurrency
+        />
+        <StatCard
+          label="Total Sanctioned Amount"
+          value={stats.totalSanctionedAmount}
+          sub="Total amount sanctioned"
+          icon={<CheckCircle2 size={18} />}
+          iconBg="#eff6ff"
+          iconColor={SECONDARY_BLUE}
+          accentColor={SECONDARY_BLUE}
+          filterParam="#/admin/loans?filter=sanctioned"
+          isCurrency
         />
       </div>
 
@@ -968,7 +1016,7 @@ export default function DashboardPage() {
             totalLoans={stats.totalLoans}
           />
           <MonthlyDisbursementChart stats={stats} />
-          <TeamPerformanceChart users={safeUsers} isLoading={usersLoading} />
+          <TeamPerformanceChart users={safeUsers} isLoading={false} />
         </div>
       </div>
 

@@ -1,8 +1,15 @@
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertCircle, ChevronRight, FileText, PhoneCall } from "lucide-react";
+import {
+  AlertCircle,
+  ChevronRight,
+  FileText,
+  PhoneCall,
+  X,
+} from "lucide-react";
+import { useMemo } from "react";
+import { Button } from "../../components/ui/button";
 import { LOAN_STAGES } from "../../constants/stages";
 import { useGetMyLoans } from "../../hooks/useQueries";
 import type { LoanWithHistory } from "../../types";
@@ -174,6 +181,31 @@ function LoanCard({ item }: { item: LoanWithHistory }) {
           </span>
         </div>
 
+        {/* Financial fields — shown when non-zero */}
+        {(loan.sanctionAmount ?? 0) > 0 && (
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-muted-foreground w-16 shrink-0 text-xs">
+              Sanctioned
+            </span>
+            <span className="text-foreground font-mono font-medium">
+              {formatCurrency(loan.sanctionAmount!)}
+            </span>
+          </div>
+        )}
+        {(loan.disbursedAmount ?? 0) > 0 && (
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-muted-foreground w-16 shrink-0 text-xs">
+              Disbursed
+            </span>
+            <span
+              className="font-mono font-semibold"
+              style={{ color: "#16a34a" }}
+            >
+              {formatCurrency(loan.disbursedAmount!)}
+            </span>
+          </div>
+        )}
+
         {/* Rejection reason (if available) */}
         {isRejected && loan.rejectionReason && (
           <div
@@ -238,15 +270,89 @@ function LoanCard({ item }: { item: LoanWithHistory }) {
   );
 }
 
+// ─── Parse filter from URL hash query string ─────────────────────────────────
+
+function parseFilterFromHash(): { type: string | null; stage: number | null } {
+  const hash = window.location.hash; // e.g. #/tracker/loans?filter=active
+  const queryStart = hash.indexOf("?");
+  if (queryStart === -1) return { type: null, stage: null };
+  const params = new URLSearchParams(hash.slice(queryStart + 1));
+  const filterParam = params.get("filter");
+  const stageParam = params.get("stage");
+  return {
+    type: filterParam,
+    stage: stageParam !== null ? Number(stageParam) : null,
+  };
+}
+
+function getFilterLabel(type: string | null, stage: number | null): string {
+  if (stage !== null && LOAN_STAGES[stage]) return LOAN_STAGES[stage];
+  if (!type) return "";
+  const labels: Record<string, string> = {
+    all: "All Loans",
+    active: "Active Loans",
+    disbursed: "Disbursed Loans",
+    sanctioned: "Sanctioned Loans",
+    rejected: "Rejected Loans",
+  };
+  return labels[type] ?? type;
+}
+
+function clearFilter() {
+  const hash = window.location.hash;
+  const qIdx = hash.indexOf("?");
+  window.location.hash = qIdx !== -1 ? hash.slice(0, qIdx) : hash;
+}
+
 const SKELETON_IDS = ["sk-a", "sk-b", "sk-c"];
 
 export default function MyLoansPage() {
   const { data: loans, isLoading, isError, refetch } = useGetMyLoans();
 
+  // Read filter from URL on each render (URL-driven, no state needed)
+  const { type: filterType, stage: filterStage } = parseFilterFromHash();
+  const hasFilter = filterType !== null || filterStage !== null;
+  const filterLabel = getFilterLabel(filterType, filterStage);
+
+  const filtered = useMemo(() => {
+    if (!loans) return [];
+    if (!hasFilter) return loans;
+
+    if (filterStage !== null) {
+      return loans.filter(
+        (l) => !l.loan.isRejected && l.loan.currentStage === filterStage,
+      );
+    }
+
+    if (filterType === "all") return loans;
+    if (filterType === "active") {
+      return loans.filter(
+        (l) =>
+          l.loan.isActive &&
+          !l.loan.isRejected &&
+          l.loan.currentStage < LOAN_STAGES.length - 1,
+      );
+    }
+    if (filterType === "disbursed") {
+      return loans.filter(
+        (l) => !l.loan.isRejected && l.loan.currentStage >= 7,
+      );
+    }
+    if (filterType === "sanctioned") {
+      return loans.filter(
+        (l) => !l.loan.isRejected && l.loan.currentStage === 6,
+      );
+    }
+    if (filterType === "rejected") {
+      return loans.filter((l) => l.loan.isRejected === true);
+    }
+    return loans;
+  }, [loans, filterType, filterStage, hasFilter]);
+
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 animate-fade-in">
       {/* Page header */}
-      <div className="mb-8">
+      <div className="mb-6">
         <h1 className="font-display font-bold text-2xl text-foreground">
           My Loan Applications
         </h1>
@@ -254,6 +360,33 @@ export default function MyLoansPage() {
           Track the progress of all your applications in real time
         </p>
       </div>
+
+      {/* Active filter indicator */}
+      {hasFilter && !isLoading && !isError && (
+        <div className="flex items-center gap-2 mb-5">
+          <div
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium text-white"
+            style={{ backgroundColor: "#F47B30" }}
+            data-ocid="active-filter-badge"
+          >
+            <span>Showing: {filterLabel}</span>
+            <button
+              type="button"
+              onClick={clearFilter}
+              className="hover:opacity-70 transition-smooth"
+              aria-label="Clear filter"
+              data-ocid="clear-filter-btn"
+            >
+              <X size={14} />
+            </button>
+          </div>
+          {filtered.length === 0 && (
+            <span className="text-sm text-muted-foreground">
+              No loans match this filter.
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Loading state */}
       {isLoading && (
@@ -288,7 +421,7 @@ export default function MyLoansPage() {
         </div>
       )}
 
-      {/* Empty state */}
+      {/* Empty state — no loans at all */}
       {!isLoading && !isError && (!loans || loans.length === 0) && (
         <div
           className="rounded-xl border border-dashed border-border bg-card p-12 text-center"
@@ -321,27 +454,57 @@ export default function MyLoansPage() {
           <div className="flex items-center gap-4 mb-5 text-sm text-muted-foreground">
             <span>
               <span className="font-semibold text-foreground">
-                {loans.length}
+                {filtered.length}
               </span>{" "}
-              application{loans.length !== 1 ? "s" : ""}
+              {hasFilter ? "matching" : ""} application
+              {filtered.length !== 1 ? "s" : ""}
+              {hasFilter && loans.length !== filtered.length && (
+                <span className="ml-1 text-xs">(of {loans.length} total)</span>
+              )}
             </span>
-            <span className="text-border">|</span>
-            <span>
-              <span className="font-semibold text-foreground">
-                {loans.filter((l) => l.loan.isActive).length}
-              </span>{" "}
-              active
-            </span>
+            {!hasFilter && (
+              <>
+                <span className="text-border">|</span>
+                <span>
+                  <span className="font-semibold text-foreground">
+                    {loans.filter((l) => l.loan.isActive).length}
+                  </span>{" "}
+                  active
+                </span>
+              </>
+            )}
           </div>
 
-          <div
-            className="grid grid-cols-1 sm:grid-cols-2 gap-4 animate-fade-in"
-            data-ocid="my-loans-grid"
-          >
-            {loans.map((item) => (
-              <LoanCard key={item.loan.id} item={item} />
-            ))}
-          </div>
+          {filtered.length > 0 ? (
+            <div
+              className="grid grid-cols-1 sm:grid-cols-2 gap-4 animate-fade-in"
+              data-ocid="my-loans-grid"
+            >
+              {filtered.map((item) => (
+                <LoanCard key={item.loan.id} item={item} />
+              ))}
+            </div>
+          ) : (
+            // Filter returned no results but there are loans
+            <div className="rounded-xl border border-dashed border-border bg-card p-10 text-center">
+              <FileText
+                size={28}
+                className="mx-auto mb-3"
+                style={{ color: "#f97316" }}
+              />
+              <p className="font-semibold text-foreground">
+                No loans match "{filterLabel}"
+              </p>
+              <button
+                type="button"
+                className="mt-3 text-sm font-medium underline underline-offset-2"
+                style={{ color: "#F47B30" }}
+                onClick={clearFilter}
+              >
+                Clear filter to see all loans
+              </button>
+            </div>
+          )}
         </>
       )}
     </div>

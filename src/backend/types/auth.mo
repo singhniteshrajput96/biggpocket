@@ -6,6 +6,7 @@ module {
     name : Text;
     mobile_number : Text;
     role : Common.Role;
+    user_type : Text;   // "internal" or "external"; defaults to "internal"
     created_at : Common.Timestamp;
   };
 
@@ -32,5 +33,6 @@ module {
     id : Common.UserId;
     name : Text;
     role : Common.Role;
+    user_type : Text;   // "internal" or "external"
   };
 };

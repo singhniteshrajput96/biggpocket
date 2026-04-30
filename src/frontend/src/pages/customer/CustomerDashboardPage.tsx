@@ -47,23 +47,36 @@ function fmt(amount: number): string {
   return `₹${amount}`;
 }
 
+function navigateToFilter(filter: string) {
+  window.location.hash = `#/tracker/loans?filter=${filter}`;
+}
+
 function StatCard({
   label,
   value,
   icon: Icon,
   accent,
   sub,
+  filterKey,
 }: {
   label: string;
   value: string | number;
   icon: React.ElementType;
   accent: string;
   sub?: string;
+  filterKey?: string;
 }) {
+  const isClickable = !!filterKey;
   return (
-    <div
-      className="bg-card border border-border rounded-xl p-4 flex flex-col gap-3"
+    <button
+      type="button"
+      onClick={() => filterKey && navigateToFilter(filterKey)}
+      disabled={!isClickable}
+      className={`bg-card border border-border rounded-xl p-4 flex flex-col gap-3 text-left w-full transition-smooth ${isClickable ? "hover:shadow-md hover:border-border/80 cursor-pointer active:scale-95" : "cursor-default"}`}
       data-ocid={`customer-stat-${label.toLowerCase().replace(/\s+/g, "-")}`}
+      style={
+        isClickable ? { outline: "none" } : { outline: "none", opacity: 1 }
+      }
     >
       <div className="flex items-center justify-between">
         <span className="text-xs font-medium text-muted-foreground">
@@ -82,7 +95,12 @@ function StatCard({
         </p>
         {sub && <p className="text-xs text-muted-foreground mt-1">{sub}</p>}
       </div>
-    </div>
+      {isClickable && (
+        <p className="text-xs font-medium" style={{ color: accent }}>
+          Click to filter →
+        </p>
+      )}
+    </button>
   );
 }
 
@@ -94,6 +112,14 @@ function DashboardSkeletons() {
           <div key={i} className="bg-card border rounded-xl p-4 space-y-3">
             <Skeleton className="h-3 w-24" />
             <Skeleton className="h-7 w-16" />
+          </div>
+        ))}
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {[0, 1].map((i) => (
+          <div key={i} className="bg-card border rounded-xl p-4 space-y-3">
+            <Skeleton className="h-3 w-24" />
+            <Skeleton className="h-7 w-28" />
           </div>
         ))}
       </div>
@@ -126,10 +152,23 @@ export default function CustomerDashboardPage() {
       (l) =>
         l.isActive && !l.isRejected && l.currentStage < LOAN_STAGES.length - 1,
     ).length;
-    const completed = loans.filter(
-      (l) => !l.isRejected && l.currentStage >= LOAN_STAGES.length - 1,
+    const disbursed = loans.filter(
+      (l) => !l.isRejected && l.currentStage >= 7,
+    ).length;
+    const sanctioned = loans.filter(
+      (l) => !l.isRejected && l.currentStage === 6,
     ).length;
     const rejected = loans.filter((l) => l.isRejected).length;
+
+    // Compute total disbursed amount (use disbursedAmount field if set, else loanAmount for disbursed-stage loans)
+    const totalDisbursedAmount = loans
+      .filter((l) => !l.isRejected && l.currentStage >= 7)
+      .reduce((s, l) => s + (l.disbursedAmount ?? l.loanAmount), 0);
+
+    // Compute total sanctioned amount (use sanctionAmount field if set, else loanAmount for sanctioned loans)
+    const totalSanctionedAmount = loans
+      .filter((l) => !l.isRejected && l.currentStage >= 6)
+      .reduce((s, l) => s + (l.sanctionAmount ?? l.loanAmount), 0);
 
     // Stage distribution (exclude rejected)
     const stageMap: Record<string, number> = {};
@@ -167,8 +206,11 @@ export default function CustomerDashboardPage() {
       total,
       totalValue,
       active,
-      completed,
+      disbursed,
+      sanctioned,
       rejected,
+      totalDisbursedAmount,
+      totalSanctionedAmount,
       stageData,
       valueData,
       recent,
@@ -257,16 +299,18 @@ export default function CustomerDashboardPage() {
         <div>
           <h1 className="text-xl font-bold text-foreground">My Dashboard</h1>
           <p className="text-sm text-muted-foreground">
-            Overview of your loan portfolio
+            Overview of your loan portfolio · Click any card to filter loans
           </p>
         </div>
       </div>
 
       {/* Rejected Warning */}
       {stats.rejected > 0 && (
-        <div
-          className="flex items-start gap-3 rounded-xl border p-4"
+        <button
+          type="button"
+          className="w-full flex items-start gap-3 rounded-xl border p-4 text-left transition-smooth hover:shadow-sm cursor-pointer"
           style={{ backgroundColor: `${RED}0c`, borderColor: `${RED}40` }}
+          onClick={() => navigateToFilter("rejected")}
           data-ocid="customer-dashboard-rejected-warning"
         >
           <AlertTriangle
@@ -274,26 +318,25 @@ export default function CustomerDashboardPage() {
             style={{ color: RED }}
             className="shrink-0 mt-0.5"
           />
-          <div>
+          <div className="flex-1">
             <p className="text-sm font-semibold" style={{ color: RED }}>
               {`${stats.rejected} loan${stats.rejected !== 1 ? "s" : ""} ${stats.rejected !== 1 ? "have" : "has"} been rejected`}
             </p>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Contact your BiggPocket agent for more information.
+              Click to view rejected loans. Contact your BiggPocket agent for
+              more information.
             </p>
           </div>
-          <a
-            href="#/tracker/loans"
+          <span
             className="ml-auto shrink-0 text-xs font-medium px-3 py-1.5 rounded-lg text-white"
             style={{ backgroundColor: RED }}
-            data-ocid="customer-dashboard-view-rejected"
           >
             View
-          </a>
-        </div>
+          </span>
+        </button>
       )}
 
-      {/* Stat Cards */}
+      {/* Stat Cards — all clickable */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard
           label="Total Loans"
@@ -301,6 +344,7 @@ export default function CustomerDashboardPage() {
           icon={FileText}
           accent={BLUE}
           sub="all files"
+          filterKey="all"
         />
         <StatCard
           label="Active Loans"
@@ -308,13 +352,15 @@ export default function CustomerDashboardPage() {
           icon={TrendingUp}
           accent={ORANGE}
           sub="in progress"
+          filterKey="active"
         />
         <StatCard
-          label="Completed"
-          value={stats.completed}
+          label="Disbursed"
+          value={stats.disbursed}
           icon={CheckCircle2}
           accent={GREEN}
-          sub="payout received"
+          sub="stage 8+"
+          filterKey="disbursed"
         />
         <StatCard
           label="Total Value"
@@ -325,14 +371,40 @@ export default function CustomerDashboardPage() {
         />
       </div>
 
-      {/* Charts */}
+      {/* Amount Cards — disbursed & sanctioned totals */}
+      <div
+        className="grid grid-cols-1 sm:grid-cols-2 gap-4"
+        data-ocid="customer-amount-stats-row"
+      >
+        <StatCard
+          label="Total Disbursed Amount"
+          value={fmt(stats.totalDisbursedAmount)}
+          icon={CheckCircle2}
+          accent={GREEN}
+          sub="amount fully disbursed"
+          filterKey="disbursed"
+        />
+        <StatCard
+          label="Total Sanctioned Amount"
+          value={fmt(stats.totalSanctionedAmount)}
+          icon={Wallet}
+          accent={BLUE}
+          sub="amount sanctioned"
+          filterKey="sanctioned"
+        />
+      </div>
+
+      {/* Charts — clickable by stage */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Stage Distribution Pie */}
+        {/* Stage Distribution Pie — clicking a slice navigates to all loans */}
         {stats.stageData.length > 0 && (
           <div className="bg-card border border-border rounded-xl p-4">
-            <h2 className="text-sm font-semibold text-foreground mb-4">
+            <h2 className="text-sm font-semibold text-foreground mb-1">
               Stage Distribution
             </h2>
+            <p className="text-xs text-muted-foreground mb-3">
+              Click a slice to filter loans by stage
+            </p>
             <div className="h-52">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
@@ -344,6 +416,16 @@ export default function CustomerDashboardPage() {
                     cy="50%"
                     outerRadius={72}
                     innerRadius={30}
+                    onClick={(entry) => {
+                      const stageName = entry.name as string;
+                      const idx = (LOAN_STAGES as readonly string[]).indexOf(
+                        stageName,
+                      );
+                      if (idx >= 0) {
+                        window.location.hash = `#/tracker/loans?stage=${idx}`;
+                      }
+                    }}
+                    style={{ cursor: "pointer" }}
                   >
                     {stats.stageData.map((entry, i) => (
                       <Cell
@@ -383,14 +465,33 @@ export default function CustomerDashboardPage() {
         {/* Loan Value by Stage Bar */}
         {stats.valueData.length > 0 && (
           <div className="bg-card border border-border rounded-xl p-4">
-            <h2 className="text-sm font-semibold text-foreground mb-4">
+            <h2 className="text-sm font-semibold text-foreground mb-1">
               Loan Value by Stage
             </h2>
+            <p className="text-xs text-muted-foreground mb-3">
+              Click a bar to filter loans by stage
+            </p>
             <div className="h-52">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
                   data={stats.valueData}
                   margin={{ top: 4, right: 8, left: 0, bottom: 4 }}
+                  onClick={(e) => {
+                    if (e?.activePayload?.[0]) {
+                      const fullName = (
+                        e.activePayload[0].payload as {
+                          fullName: string;
+                        }
+                      ).fullName;
+                      const idx = (LOAN_STAGES as readonly string[]).indexOf(
+                        fullName,
+                      );
+                      if (idx >= 0) {
+                        window.location.hash = `#/tracker/loans?stage=${idx}`;
+                      }
+                    }
+                  }}
+                  style={{ cursor: "pointer" }}
                 >
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                   <XAxis

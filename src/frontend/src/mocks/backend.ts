@@ -46,6 +46,9 @@ const baseLoanFields = {
   is_rejected: false,
   rejection_reason: "",
   rejection_stage: BigInt(0),
+  required_amount: BigInt(0),
+  sanction_amount: BigInt(0),
+  disbursed_amount: BigInt(0),
 };
 
 const sampleLoan1 = {
@@ -179,15 +182,17 @@ export const mockBackend: backendInterface = {
         disbursement_percent: 33.3,
         dropoff_rate: 0.0,
         recent_activity: sampleHistory,
+        total_disbursed_amount: BigInt(2500000),
+        total_sanctioned_amount: BigInt(800000),
       },
     };
   },
 
-  adminCreateLoan: async (_token, _name, _bank, _type, _amount, _mobile, _dp, _co, _emp, _inc, _pt, _pv) => {
+  adminCreateLoan: async (_token, _name, _bank, _type, _amount, _mobile, _dp, _co, _emp, _inc, _pt, _pv, _req, _sanc, _disb) => {
     return { __kind__: "ok" as const, ok: BigInt(4) };
   },
 
-  adminUpdateLoan: async (_token, _id, _name, _bank, _type, _amount) => {
+  adminUpdateLoan: async (_token, _id, _input) => {
     return { __kind__: "ok" as const, ok: null };
   },
 
@@ -210,6 +215,7 @@ export const mockBackend: backendInterface = {
         id: BigInt(99),
         name: _name,
         role: _role === "admin" ? Role.admin : Role.user,
+        user_type: "internal",
       },
     };
   },
@@ -218,9 +224,24 @@ export const mockBackend: backendInterface = {
     return {
       __kind__: "ok" as const,
       ok: [
-        { id: BigInt(1), name: "Rahul Sharma", role: Role.user },
-        { id: BigInt(2), name: "Priya Patel", role: Role.user },
-        { id: BigInt(3), name: "Anil Kumar", role: Role.user },
+        {
+          id: BigInt(1),
+          name: "Rahul Sharma",
+          role: Role.user,
+          user_type: "internal",
+        },
+        {
+          id: BigInt(2),
+          name: "Priya Patel",
+          role: Role.user,
+          user_type: "internal",
+        },
+        {
+          id: BigInt(3),
+          name: "Anil Kumar",
+          role: Role.user,
+          user_type: "external",
+        },
       ],
     };
   },
@@ -228,7 +249,12 @@ export const mockBackend: backendInterface = {
   adminGetUserById: async (_token, _userId) => {
     return {
       __kind__: "ok" as const,
-      ok: { id: BigInt(1), name: "Rahul Sharma", role: Role.user },
+      ok: {
+        id: BigInt(1),
+        name: "Rahul Sharma",
+        role: Role.user,
+        user_type: "internal",
+      },
     };
   },
 
@@ -276,6 +302,48 @@ export const mockBackend: backendInterface = {
   },
 
   adminUnrejectLoan: async (_token, _loanId) => {
+    return { __kind__: "ok" as const, ok: null };
+  },
+
+  adminDeleteUser: async (_token, _userId) => {
+    return { __kind__: "ok" as const, ok: null };
+  },
+
+  adminUpdateUserType: async (_token, _userId, _userType) => {
+    return {
+      __kind__: "ok" as const,
+      ok: {
+        id: _userId,
+        name: "User",
+        role: Role.user,
+        user_type: _userType,
+      },
+    };
+  },
+
+  getUserDashboard: async (_token: string) => {
+    return {
+      __kind__: "ok" as const,
+      ok: {
+        total_loans: BigInt(2),
+        total_value: BigInt(5800000),
+        active_loans: BigInt(2),
+        stage_breakdown: [
+          ["Login Done", BigInt(1)],
+          ["Sanctioned", BigInt(1)],
+        ] as Array<[string, bigint]>,
+        recent_loans: [sampleLoan1.loan, sampleLoan2.loan],
+        total_disbursed_amount: BigInt(0),
+        total_sanctioned_amount: BigInt(800000),
+      },
+    };
+  },
+
+  adminGetDeletedLoans: async (_token: string) => {
+    return { __kind__: "ok" as const, ok: [] };
+  },
+
+  adminRestoreLoan: async (_token: string, _loanId: bigint) => {
     return { __kind__: "ok" as const, ok: null };
   },
 };

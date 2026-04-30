@@ -10,16 +10,20 @@ import {
   adminCreateUser,
   adminDeleteDocument,
   adminDeleteLoan,
+  adminDeleteUser,
   adminGetAllLoans,
   adminGetAllUsers,
   adminGetDashboardStats,
+  adminGetDeletedLoans,
   adminGetLoanDocuments,
   adminRejectLoan,
   adminRemoveUserFromLoan,
+  adminRestoreLoan,
   adminUnrejectLoan,
   adminUpdateAdminMobile,
   adminUpdateLoan,
   adminUpdateStage,
+  adminUpdateUserType,
   getLoanById,
   getLoanDocuments,
   getMyLoans,
@@ -97,7 +101,8 @@ export function useAdminGetAllLoans(
     enabled: !!actor && !actorFetching,
     retry: 3,
     retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 8000),
-    staleTime: 30_000,
+    staleTime: 0,
+    refetchOnMount: "always" as const,
   });
 }
 
@@ -107,15 +112,19 @@ export function useAdminGetDashboardStats() {
     queryKey: ["dashboardStats"],
     queryFn: async () => {
       const t = getToken(); // re-read at call time to avoid stale closure
-      if (!actor || !t) throw new Error("Not authenticated");
+      // If actor or token not ready, return null to stay in loading state rather than error
+      if (!actor || !t) return null;
       return adminGetDashboardStats(actor, t);
     },
     // Only block while actor is actively initializing — once actor is ready,
     // run the query even if the token snapshot was taken before auth settled.
     enabled: !!actor && !actorFetching,
-    retry: 3,
-    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 8000),
-    staleTime: 30_000,
+    retry: 5,
+    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 10000),
+    staleTime: 0,
+    refetchInterval: 5_000,
+    // Do not propagate error to error boundary — handle gracefully in component
+    throwOnError: false,
   });
 }
 
@@ -135,9 +144,17 @@ export function useAdminCreateLoan() {
       income?: number;
       propertyType?: string;
       propertyValue?: number;
+      requiredAmount?: number;
+      sanctionAmount?: number;
+      disbursedAmount?: number;
     }) => {
       const token = getToken();
-      if (!actor || !token) throw new Error("Not authenticated");
+      if (!actor || !token) {
+        // Session expired or missing — clear and redirect to login
+        import("../lib/auth").then(({ clearSession }) => clearSession());
+        window.location.hash = "#/login";
+        throw new Error("Session expired. Please log in again.");
+      }
       return adminCreateLoan(
         actor,
         token,
@@ -152,11 +169,14 @@ export function useAdminCreateLoan() {
         params.income,
         params.propertyType,
         params.propertyValue,
+        params.requiredAmount,
+        params.sanctionAmount,
+        params.disbursedAmount,
       );
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["adminLoans"] });
-      void queryClient.invalidateQueries({ queryKey: ["dashboardStats"] });
+      void queryClient.refetchQueries({ queryKey: ["adminLoans"] });
+      void queryClient.refetchQueries({ queryKey: ["dashboardStats"] });
     },
   });
 }
@@ -184,8 +204,8 @@ export function useAdminUpdateStage() {
     },
     onSuccess: (_data, vars) => {
       void queryClient.invalidateQueries({ queryKey: ["loan", vars.loanId] });
-      void queryClient.invalidateQueries({ queryKey: ["adminLoans"] });
-      void queryClient.invalidateQueries({ queryKey: ["dashboardStats"] });
+      void queryClient.refetchQueries({ queryKey: ["adminLoans"] });
+      void queryClient.refetchQueries({ queryKey: ["dashboardStats"] });
     },
   });
 }
@@ -200,6 +220,9 @@ export function useAdminUpdateLoan() {
       bankName: string;
       loanType: string;
       loanAmount: number;
+      sanctionAmount?: number;
+      disbursedAmount?: number;
+      requiredAmount?: number;
     }) => {
       const token = getToken();
       if (!actor || !token) throw new Error("Not authenticated");
@@ -211,11 +234,14 @@ export function useAdminUpdateLoan() {
         params.bankName,
         params.loanType,
         params.loanAmount,
+        params.sanctionAmount,
+        params.disbursedAmount,
+        params.requiredAmount,
       );
     },
     onSuccess: (_data, vars) => {
       void queryClient.invalidateQueries({ queryKey: ["loan", vars.loanId] });
-      void queryClient.invalidateQueries({ queryKey: ["adminLoans"] });
+      void queryClient.refetchQueries({ queryKey: ["adminLoans"] });
     },
   });
 }
@@ -231,7 +257,7 @@ export function useAdminAssignUser() {
     },
     onSuccess: (_data, vars) => {
       void queryClient.invalidateQueries({ queryKey: ["loan", vars.loanId] });
-      void queryClient.invalidateQueries({ queryKey: ["adminLoans"] });
+      void queryClient.refetchQueries({ queryKey: ["adminLoans"] });
     },
   });
 }
@@ -246,8 +272,8 @@ export function useAdminDeleteLoan() {
       return adminDeleteLoan(actor, token, loanId);
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["adminLoans"] });
-      void queryClient.invalidateQueries({ queryKey: ["dashboardStats"] });
+      void queryClient.refetchQueries({ queryKey: ["adminLoans"] });
+      void queryClient.refetchQueries({ queryKey: ["dashboardStats"] });
     },
   });
 }
@@ -320,7 +346,7 @@ export function useAdminAssignMultipleUsers() {
     },
     onSuccess: (_data, vars) => {
       void queryClient.invalidateQueries({ queryKey: ["loan", vars.loan_id] });
-      void queryClient.invalidateQueries({ queryKey: ["adminLoans"] });
+      void queryClient.refetchQueries({ queryKey: ["adminLoans"] });
     },
   });
 }
@@ -336,7 +362,7 @@ export function useAdminAddUserToLoan() {
     },
     onSuccess: (_data, vars) => {
       void queryClient.invalidateQueries({ queryKey: ["loan", vars.loan_id] });
-      void queryClient.invalidateQueries({ queryKey: ["adminLoans"] });
+      void queryClient.refetchQueries({ queryKey: ["adminLoans"] });
     },
   });
 }
@@ -357,7 +383,7 @@ export function useAdminRemoveUserFromLoan() {
     },
     onSuccess: (_data, vars) => {
       void queryClient.invalidateQueries({ queryKey: ["loan", vars.loan_id] });
-      void queryClient.invalidateQueries({ queryKey: ["adminLoans"] });
+      void queryClient.refetchQueries({ queryKey: ["adminLoans"] });
     },
   });
 }
@@ -440,8 +466,8 @@ export function useAdminRejectLoan() {
     },
     onSuccess: (_data, vars) => {
       void queryClient.invalidateQueries({ queryKey: ["loan", vars.loan_id] });
-      void queryClient.invalidateQueries({ queryKey: ["adminLoans"] });
-      void queryClient.invalidateQueries({ queryKey: ["dashboardStats"] });
+      void queryClient.refetchQueries({ queryKey: ["adminLoans"] });
+      void queryClient.refetchQueries({ queryKey: ["dashboardStats"] });
     },
   });
 }
@@ -457,8 +483,8 @@ export function useAdminUnrejectLoan() {
     },
     onSuccess: (_data, loan_id) => {
       void queryClient.invalidateQueries({ queryKey: ["loan", loan_id] });
-      void queryClient.invalidateQueries({ queryKey: ["adminLoans"] });
-      void queryClient.invalidateQueries({ queryKey: ["dashboardStats"] });
+      void queryClient.refetchQueries({ queryKey: ["adminLoans"] });
+      void queryClient.refetchQueries({ queryKey: ["dashboardStats"] });
     },
   });
 }
@@ -476,5 +502,69 @@ export function useGetUserDashboard() {
     retry: 3,
     retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 8000),
     staleTime: 30_000,
+  });
+}
+
+export function useAdminUpdateUserType() {
+  const { actor } = useBackendActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (params: { userId: number; userType: string }) => {
+      const token = getToken();
+      if (!actor || !token) throw new Error("Not authenticated");
+      return adminUpdateUserType(actor, token, params.userId, params.userType);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["adminUsers"] });
+    },
+  });
+}
+
+export function useAdminDeleteUser() {
+  const { actor } = useBackendActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (userId: number) => {
+      const token = getToken();
+      if (!actor || !token) throw new Error("Not authenticated");
+      return adminDeleteUser(actor, token, userId);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["adminUsers"] });
+    },
+  });
+}
+
+export function useAdminGetDeletedLoans() {
+  const { actor, isFetching: actorFetching } = useBackendActor();
+  return useQuery({
+    queryKey: ["admin-deleted-loans"],
+    queryFn: async () => {
+      const t = getToken();
+      if (!actor || !t) throw new Error("Not authenticated");
+      return adminGetDeletedLoans(actor, t);
+    },
+    enabled: !!actor && !actorFetching,
+    retry: 3,
+    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 8000),
+    staleTime: 0,
+    refetchOnMount: "always" as const,
+  });
+}
+
+export function useAdminRestoreLoan() {
+  const { actor } = useBackendActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (loanId: number) => {
+      const token = getToken();
+      if (!actor || !token) throw new Error("Not authenticated");
+      return adminRestoreLoan(actor, token, loanId);
+    },
+    onSuccess: () => {
+      void queryClient.refetchQueries({ queryKey: ["admin-deleted-loans"] });
+      void queryClient.refetchQueries({ queryKey: ["adminLoans"] });
+      void queryClient.refetchQueries({ queryKey: ["dashboardStats"] });
+    },
   });
 }

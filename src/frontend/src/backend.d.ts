@@ -7,20 +7,6 @@ export interface None {
     __kind__: "None";
 }
 export type Option<T> = Some<T> | None;
-export interface DashboardStats {
-    total_loans: bigint;
-    sanctioned_count: bigint;
-    rejected_loans: bigint;
-    stage_breakdown: Array<[bigint, string, bigint]>;
-    disbursement_percent: number;
-    active_loans: bigint;
-    recent_activity: Array<LoanStageHistory>;
-    sanctioned_percent: number;
-    dropoff_rate: number;
-    disbursed_count: bigint;
-}
-export type UserId = bigint;
-export type Timestamp = bigint;
 export interface LoanStageHistory {
     id: bigint;
     loan_id: bigint;
@@ -31,6 +17,7 @@ export interface LoanStageHistory {
     stage_name: string;
     remarks: string;
 }
+export type Timestamp = bigint;
 export interface PaginatedLoans {
     total: bigint;
     page: bigint;
@@ -46,32 +33,25 @@ export interface Document {
     uploaded_at: Timestamp;
     uploaded_by: bigint;
 }
-export type Token = string;
-export interface LoanApplication {
-    id: bigint;
-    co_applicant_name: string;
-    bank_name: string;
-    updated_at: Timestamp;
-    current_stage: bigint;
-    is_rejected: boolean;
-    employment_type: string;
-    created_at: Timestamp;
-    user_id?: UserId;
-    loan_amount: bigint;
-    loan_type: string;
-    income: bigint;
-    rejection_stage: bigint;
-    property_value: bigint;
-    distribution_partner: string;
-    property_type: string;
-    is_active: boolean;
-    rejection_reason: string;
-    applicant_name: string;
-}
 export interface PublicUser {
     id: UserId;
+    user_type: string;
     name: string;
     role: Role;
+}
+export interface DashboardStats {
+    total_loans: bigint;
+    sanctioned_count: bigint;
+    total_sanctioned_amount: bigint;
+    rejected_loans: bigint;
+    stage_breakdown: Array<[bigint, string, bigint]>;
+    disbursement_percent: number;
+    active_loans: bigint;
+    recent_activity: Array<LoanStageHistory>;
+    sanctioned_percent: number;
+    total_disbursed_amount: bigint;
+    dropoff_rate: number;
+    disbursed_count: bigint;
 }
 export interface LoanWithHistory {
     loan: LoanApplication;
@@ -83,6 +63,56 @@ export interface UploadDocumentInput {
     file_name: string;
     file_url: string;
     file_size: bigint;
+}
+export interface UpdateLoanInput {
+    co_applicant_name?: string;
+    bank_name?: string;
+    required_amount?: bigint;
+    employment_type?: string;
+    loan_amount?: bigint;
+    loan_type?: string;
+    income?: bigint;
+    sanction_amount?: bigint;
+    property_value?: bigint;
+    distribution_partner?: string;
+    disbursed_amount?: bigint;
+    property_type?: string;
+    applicant_name?: string;
+}
+export type UserId = bigint;
+export interface UserDashboardStats {
+    total_loans: bigint;
+    total_sanctioned_amount: bigint;
+    stage_breakdown: Array<[string, bigint]>;
+    recent_loans: Array<LoanApplication>;
+    active_loans: bigint;
+    total_value: bigint;
+    total_disbursed_amount: bigint;
+}
+export type Token = string;
+export interface LoanApplication {
+    id: bigint;
+    co_applicant_name: string;
+    bank_name: string;
+    updated_at: Timestamp;
+    current_stage: bigint;
+    is_rejected: boolean;
+    required_amount: bigint;
+    employment_type: string;
+    created_at: Timestamp;
+    user_id?: UserId;
+    loan_amount: bigint;
+    loan_type: string;
+    income: bigint;
+    rejection_stage: bigint;
+    sanction_amount: bigint;
+    property_value: bigint;
+    distribution_partner: string;
+    disbursed_amount: bigint;
+    property_type: string;
+    is_active: boolean;
+    rejection_reason: string;
+    applicant_name: string;
 }
 export enum Role {
     admin = "admin",
@@ -117,7 +147,7 @@ export interface backendInterface {
         __kind__: "err";
         err: string;
     }>;
-    adminCreateLoan(token: string, applicantName: string, bankName: string, loanType: string, loanAmount: bigint, mobile: string, distributionPartner: string, coApplicantName: string, employmentType: string, income: bigint, propertyType: string, propertyValue: bigint): Promise<{
+    adminCreateLoan(token: string, applicantName: string, bankName: string, loanType: string, loanAmount: bigint, mobile: string, distributionPartner: string, coApplicantName: string, employmentType: string, income: bigint, propertyType: string, propertyValue: bigint, requiredAmount: bigint | null, sanctionAmount: bigint | null, disbursedAmount: bigint | null): Promise<{
         __kind__: "ok";
         ok: bigint;
     } | {
@@ -145,6 +175,13 @@ export interface backendInterface {
         __kind__: "err";
         err: string;
     }>;
+    adminDeleteUser(token: string, userId: bigint): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
     adminGetAllLoans(token: string, page: bigint, pageSize: bigint, search: string, stageFilter: bigint | null, assignedUserFilter: bigint | null): Promise<{
         __kind__: "ok";
         ok: PaginatedLoans;
@@ -162,6 +199,13 @@ export interface backendInterface {
     adminGetDashboardStats(token: string): Promise<{
         __kind__: "ok";
         ok: DashboardStats;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
+    adminGetDeletedLoans(token: string): Promise<{
+        __kind__: "ok";
+        ok: Array<LoanWithHistory>;
     } | {
         __kind__: "err";
         err: string;
@@ -194,6 +238,13 @@ export interface backendInterface {
         __kind__: "err";
         err: string;
     }>;
+    adminRestoreLoan(token: string, loanId: bigint): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
     adminUnrejectLoan(token: string, loanId: bigint): Promise<{
         __kind__: "ok";
         ok: null;
@@ -208,7 +259,7 @@ export interface backendInterface {
         __kind__: "err";
         err: string;
     }>;
-    adminUpdateLoan(token: string, loanId: bigint, applicantName: string, bankName: string, loanType: string, loanAmount: bigint): Promise<{
+    adminUpdateLoan(token: string, loanId: bigint, input: UpdateLoanInput): Promise<{
         __kind__: "ok";
         ok: null;
     } | {
@@ -218,6 +269,13 @@ export interface backendInterface {
     adminUpdateStage(token: string, loanId: bigint, stageIndex: bigint, remarks: string, showRemarks: boolean): Promise<{
         __kind__: "ok";
         ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
+    adminUpdateUserType(token: string, userId: bigint, userType: string): Promise<{
+        __kind__: "ok";
+        ok: PublicUser;
     } | {
         __kind__: "err";
         err: string;
@@ -239,6 +297,13 @@ export interface backendInterface {
     getMyLoans(token: string): Promise<{
         __kind__: "ok";
         ok: Array<LoanWithHistory>;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
+    getUserDashboard(token: string): Promise<{
+        __kind__: "ok";
+        ok: UserDashboardStats;
     } | {
         __kind__: "err";
         err: string;

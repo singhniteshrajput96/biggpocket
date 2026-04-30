@@ -28,6 +28,7 @@ export const UserId = IDL.Nat;
 export const Role = IDL.Variant({ 'admin' : IDL.Null, 'user' : IDL.Null });
 export const PublicUser = IDL.Record({
   'id' : UserId,
+  'user_type' : IDL.Text,
   'name' : IDL.Text,
   'role' : Role,
 });
@@ -38,6 +39,7 @@ export const LoanApplication = IDL.Record({
   'updated_at' : Timestamp,
   'current_stage' : IDL.Nat,
   'is_rejected' : IDL.Bool,
+  'required_amount' : IDL.Nat,
   'employment_type' : IDL.Text,
   'created_at' : Timestamp,
   'user_id' : IDL.Opt(UserId),
@@ -45,8 +47,10 @@ export const LoanApplication = IDL.Record({
   'loan_type' : IDL.Text,
   'income' : IDL.Nat,
   'rejection_stage' : IDL.Nat,
+  'sanction_amount' : IDL.Nat,
   'property_value' : IDL.Nat,
   'distribution_partner' : IDL.Text,
+  'disbursed_amount' : IDL.Nat,
   'property_type' : IDL.Text,
   'is_active' : IDL.Bool,
   'rejection_reason' : IDL.Text,
@@ -76,14 +80,40 @@ export const PaginatedLoans = IDL.Record({
 export const DashboardStats = IDL.Record({
   'total_loans' : IDL.Nat,
   'sanctioned_count' : IDL.Nat,
+  'total_sanctioned_amount' : IDL.Nat,
   'rejected_loans' : IDL.Nat,
   'stage_breakdown' : IDL.Vec(IDL.Tuple(IDL.Nat, IDL.Text, IDL.Nat)),
   'disbursement_percent' : IDL.Float64,
   'active_loans' : IDL.Nat,
   'recent_activity' : IDL.Vec(LoanStageHistory),
   'sanctioned_percent' : IDL.Float64,
+  'total_disbursed_amount' : IDL.Nat,
   'dropoff_rate' : IDL.Float64,
   'disbursed_count' : IDL.Nat,
+});
+export const UpdateLoanInput = IDL.Record({
+  'co_applicant_name' : IDL.Opt(IDL.Text),
+  'bank_name' : IDL.Opt(IDL.Text),
+  'required_amount' : IDL.Opt(IDL.Nat),
+  'employment_type' : IDL.Opt(IDL.Text),
+  'loan_amount' : IDL.Opt(IDL.Nat),
+  'loan_type' : IDL.Opt(IDL.Text),
+  'income' : IDL.Opt(IDL.Nat),
+  'sanction_amount' : IDL.Opt(IDL.Nat),
+  'property_value' : IDL.Opt(IDL.Nat),
+  'distribution_partner' : IDL.Opt(IDL.Text),
+  'disbursed_amount' : IDL.Opt(IDL.Nat),
+  'property_type' : IDL.Opt(IDL.Text),
+  'applicant_name' : IDL.Opt(IDL.Text),
+});
+export const UserDashboardStats = IDL.Record({
+  'total_loans' : IDL.Nat,
+  'total_sanctioned_amount' : IDL.Nat,
+  'stage_breakdown' : IDL.Vec(IDL.Tuple(IDL.Text, IDL.Nat)),
+  'recent_loans' : IDL.Vec(LoanApplication),
+  'active_loans' : IDL.Nat,
+  'total_value' : IDL.Nat,
+  'total_disbursed_amount' : IDL.Nat,
 });
 export const Token = IDL.Text;
 
@@ -122,6 +152,9 @@ export const idlService = IDL.Service({
         IDL.Nat,
         IDL.Text,
         IDL.Nat,
+        IDL.Opt(IDL.Nat),
+        IDL.Opt(IDL.Nat),
+        IDL.Opt(IDL.Nat),
       ],
       [IDL.Variant({ 'ok' : IDL.Nat, 'err' : IDL.Text })],
       [],
@@ -137,6 +170,11 @@ export const idlService = IDL.Service({
       [],
     ),
   'adminDeleteLoan' : IDL.Func(
+      [IDL.Text, IDL.Nat],
+      [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+      [],
+    ),
+  'adminDeleteUser' : IDL.Func(
       [IDL.Text, IDL.Nat],
       [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
       [],
@@ -163,6 +201,11 @@ export const idlService = IDL.Service({
       [IDL.Variant({ 'ok' : DashboardStats, 'err' : IDL.Text })],
       [],
     ),
+  'adminGetDeletedLoans' : IDL.Func(
+      [IDL.Text],
+      [IDL.Variant({ 'ok' : IDL.Vec(LoanWithHistory), 'err' : IDL.Text })],
+      [],
+    ),
   'adminGetLoanDocuments' : IDL.Func(
       [IDL.Text, IDL.Nat],
       [IDL.Variant({ 'ok' : IDL.Vec(Document), 'err' : IDL.Text })],
@@ -183,6 +226,11 @@ export const idlService = IDL.Service({
       [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
       [],
     ),
+  'adminRestoreLoan' : IDL.Func(
+      [IDL.Text, IDL.Nat],
+      [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+      [],
+    ),
   'adminUnrejectLoan' : IDL.Func(
       [IDL.Text, IDL.Nat],
       [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
@@ -194,13 +242,18 @@ export const idlService = IDL.Service({
       [],
     ),
   'adminUpdateLoan' : IDL.Func(
-      [IDL.Text, IDL.Nat, IDL.Text, IDL.Text, IDL.Text, IDL.Nat],
+      [IDL.Text, IDL.Nat, UpdateLoanInput],
       [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
       [],
     ),
   'adminUpdateStage' : IDL.Func(
       [IDL.Text, IDL.Nat, IDL.Nat, IDL.Text, IDL.Bool],
       [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+      [],
+    ),
+  'adminUpdateUserType' : IDL.Func(
+      [IDL.Text, IDL.Nat, IDL.Text],
+      [IDL.Variant({ 'ok' : PublicUser, 'err' : IDL.Text })],
       [],
     ),
   'getLoanById' : IDL.Func(
@@ -216,6 +269,11 @@ export const idlService = IDL.Service({
   'getMyLoans' : IDL.Func(
       [IDL.Text],
       [IDL.Variant({ 'ok' : IDL.Vec(LoanWithHistory), 'err' : IDL.Text })],
+      [],
+    ),
+  'getUserDashboard' : IDL.Func(
+      [IDL.Text],
+      [IDL.Variant({ 'ok' : UserDashboardStats, 'err' : IDL.Text })],
       [],
     ),
   'sendOTP' : IDL.Func([IDL.Text], [IDL.Text], []),
@@ -259,6 +317,7 @@ export const idlFactory = ({ IDL }) => {
   const Role = IDL.Variant({ 'admin' : IDL.Null, 'user' : IDL.Null });
   const PublicUser = IDL.Record({
     'id' : UserId,
+    'user_type' : IDL.Text,
     'name' : IDL.Text,
     'role' : Role,
   });
@@ -269,6 +328,7 @@ export const idlFactory = ({ IDL }) => {
     'updated_at' : Timestamp,
     'current_stage' : IDL.Nat,
     'is_rejected' : IDL.Bool,
+    'required_amount' : IDL.Nat,
     'employment_type' : IDL.Text,
     'created_at' : Timestamp,
     'user_id' : IDL.Opt(UserId),
@@ -276,8 +336,10 @@ export const idlFactory = ({ IDL }) => {
     'loan_type' : IDL.Text,
     'income' : IDL.Nat,
     'rejection_stage' : IDL.Nat,
+    'sanction_amount' : IDL.Nat,
     'property_value' : IDL.Nat,
     'distribution_partner' : IDL.Text,
+    'disbursed_amount' : IDL.Nat,
     'property_type' : IDL.Text,
     'is_active' : IDL.Bool,
     'rejection_reason' : IDL.Text,
@@ -307,14 +369,40 @@ export const idlFactory = ({ IDL }) => {
   const DashboardStats = IDL.Record({
     'total_loans' : IDL.Nat,
     'sanctioned_count' : IDL.Nat,
+    'total_sanctioned_amount' : IDL.Nat,
     'rejected_loans' : IDL.Nat,
     'stage_breakdown' : IDL.Vec(IDL.Tuple(IDL.Nat, IDL.Text, IDL.Nat)),
     'disbursement_percent' : IDL.Float64,
     'active_loans' : IDL.Nat,
     'recent_activity' : IDL.Vec(LoanStageHistory),
     'sanctioned_percent' : IDL.Float64,
+    'total_disbursed_amount' : IDL.Nat,
     'dropoff_rate' : IDL.Float64,
     'disbursed_count' : IDL.Nat,
+  });
+  const UpdateLoanInput = IDL.Record({
+    'co_applicant_name' : IDL.Opt(IDL.Text),
+    'bank_name' : IDL.Opt(IDL.Text),
+    'required_amount' : IDL.Opt(IDL.Nat),
+    'employment_type' : IDL.Opt(IDL.Text),
+    'loan_amount' : IDL.Opt(IDL.Nat),
+    'loan_type' : IDL.Opt(IDL.Text),
+    'income' : IDL.Opt(IDL.Nat),
+    'sanction_amount' : IDL.Opt(IDL.Nat),
+    'property_value' : IDL.Opt(IDL.Nat),
+    'distribution_partner' : IDL.Opt(IDL.Text),
+    'disbursed_amount' : IDL.Opt(IDL.Nat),
+    'property_type' : IDL.Opt(IDL.Text),
+    'applicant_name' : IDL.Opt(IDL.Text),
+  });
+  const UserDashboardStats = IDL.Record({
+    'total_loans' : IDL.Nat,
+    'total_sanctioned_amount' : IDL.Nat,
+    'stage_breakdown' : IDL.Vec(IDL.Tuple(IDL.Text, IDL.Nat)),
+    'recent_loans' : IDL.Vec(LoanApplication),
+    'active_loans' : IDL.Nat,
+    'total_value' : IDL.Nat,
+    'total_disbursed_amount' : IDL.Nat,
   });
   const Token = IDL.Text;
   
@@ -353,6 +441,9 @@ export const idlFactory = ({ IDL }) => {
           IDL.Nat,
           IDL.Text,
           IDL.Nat,
+          IDL.Opt(IDL.Nat),
+          IDL.Opt(IDL.Nat),
+          IDL.Opt(IDL.Nat),
         ],
         [IDL.Variant({ 'ok' : IDL.Nat, 'err' : IDL.Text })],
         [],
@@ -368,6 +459,11 @@ export const idlFactory = ({ IDL }) => {
         [],
       ),
     'adminDeleteLoan' : IDL.Func(
+        [IDL.Text, IDL.Nat],
+        [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+        [],
+      ),
+    'adminDeleteUser' : IDL.Func(
         [IDL.Text, IDL.Nat],
         [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
         [],
@@ -394,6 +490,11 @@ export const idlFactory = ({ IDL }) => {
         [IDL.Variant({ 'ok' : DashboardStats, 'err' : IDL.Text })],
         [],
       ),
+    'adminGetDeletedLoans' : IDL.Func(
+        [IDL.Text],
+        [IDL.Variant({ 'ok' : IDL.Vec(LoanWithHistory), 'err' : IDL.Text })],
+        [],
+      ),
     'adminGetLoanDocuments' : IDL.Func(
         [IDL.Text, IDL.Nat],
         [IDL.Variant({ 'ok' : IDL.Vec(Document), 'err' : IDL.Text })],
@@ -414,6 +515,11 @@ export const idlFactory = ({ IDL }) => {
         [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
         [],
       ),
+    'adminRestoreLoan' : IDL.Func(
+        [IDL.Text, IDL.Nat],
+        [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+        [],
+      ),
     'adminUnrejectLoan' : IDL.Func(
         [IDL.Text, IDL.Nat],
         [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
@@ -425,13 +531,18 @@ export const idlFactory = ({ IDL }) => {
         [],
       ),
     'adminUpdateLoan' : IDL.Func(
-        [IDL.Text, IDL.Nat, IDL.Text, IDL.Text, IDL.Text, IDL.Nat],
+        [IDL.Text, IDL.Nat, UpdateLoanInput],
         [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
         [],
       ),
     'adminUpdateStage' : IDL.Func(
         [IDL.Text, IDL.Nat, IDL.Nat, IDL.Text, IDL.Bool],
         [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+        [],
+      ),
+    'adminUpdateUserType' : IDL.Func(
+        [IDL.Text, IDL.Nat, IDL.Text],
+        [IDL.Variant({ 'ok' : PublicUser, 'err' : IDL.Text })],
         [],
       ),
     'getLoanById' : IDL.Func(
@@ -447,6 +558,11 @@ export const idlFactory = ({ IDL }) => {
     'getMyLoans' : IDL.Func(
         [IDL.Text],
         [IDL.Variant({ 'ok' : IDL.Vec(LoanWithHistory), 'err' : IDL.Text })],
+        [],
+      ),
+    'getUserDashboard' : IDL.Func(
+        [IDL.Text],
+        [IDL.Variant({ 'ok' : UserDashboardStats, 'err' : IDL.Text })],
         [],
       ),
     'sendOTP' : IDL.Func([IDL.Text], [IDL.Text], []),

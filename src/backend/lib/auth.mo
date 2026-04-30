@@ -4,6 +4,7 @@ import Int "mo:core/Int";
 import Text "mo:core/Text";
 import Nat "mo:core/Nat";
 import AuthTypes "../types/auth";
+import LoanTypes "../types/loans";
 import Common "../types/common";
 
 module {
@@ -64,6 +65,7 @@ module {
           name = "User " # mobile;
           mobile_number = mobile;
           role = #user;
+          user_type = "internal";   // default all new users to internal
           created_at = now;
         };
         users.add(newUser);
@@ -111,9 +113,9 @@ module {
     }
   };
 
-  // Strips mobile_number — safe for public API exposure
+  // Strips mobile_number — safe for public API exposure; includes user_type
   public func toPublicUser(user : AuthTypes.User) : AuthTypes.PublicUser {
-    { id = user.id; name = user.name; role = user.role }
+    { id = user.id; name = user.name; role = user.role; user_type = user.user_type }
   };
 
   // Returns all users without mobile numbers
@@ -126,6 +128,84 @@ module {
     switch (users.find(func(u : AuthTypes.User) : Bool { Nat.equal(u.id, id) })) {
       case (?u) { ?toPublicUser(u) };
       case null { null };
+    }
+  };
+
+  // Update a user's type (internal/external). Requires admin token.
+  public func adminUpdateUserType(
+    token : Common.Token,
+    userId : Nat,
+    userType : Text,
+    sessions : Map.Map<Common.Token, AuthTypes.Session>,
+    users : List.List<AuthTypes.User>
+  ) : { #ok : AuthTypes.PublicUser; #err : Text } {
+    switch (requireAdmin(token, sessions, users)) {
+      case (#err(e)) { #err(e) };
+      case (#ok(_)) {
+        if (not (Text.equal(userType, "internal") or Text.equal(userType, "external"))) {
+          return #err("Invalid user_type: must be 'internal' or 'external'")
+        };
+        switch (users.find(func(u : AuthTypes.User) : Bool { Nat.equal(u.id, userId) })) {
+          case null { #err("User not found") };
+          case (?_) {
+            users.mapInPlace(func(u : AuthTypes.User) : AuthTypes.User {
+              if (Nat.equal(u.id, userId)) { { u with user_type = userType } } else { u }
+            });
+            switch (users.find(func(u : AuthTypes.User) : Bool { Nat.equal(u.id, userId) })) {
+              case (?updated) { #ok(toPublicUser(updated)) };
+              case null { #err("User not found after update") };
+            }
+          };
+        }
+      };
+    }
+  };
+
+  // Delete a user. Requires admin token and NO active loan assignments.
+  public func adminDeleteUser(
+    token : Common.Token,
+    userId : Nat,
+    sessions : Map.Map<Common.Token, AuthTypes.Session>,
+    users : List.List<AuthTypes.User>,
+    loanAssignments : List.List<LoanTypes.LoanAssignment>
+  ) : { #ok : (); #err : Text } {
+    switch (requireAdmin(token, sessions, users)) {
+      case (#err(e)) { #err(e) };
+      case (#ok(_)) {
+        // Prevent deleting self (the admin performing this action)
+        switch (sessions.get(token)) {
+          case null { #err("Invalid or expired session") };
+          case (?session) {
+            if (Nat.equal(session.userId, userId)) {
+              return #err("Cannot delete your own account")
+            };
+            // Verify user exists
+            switch (users.find(func(u : AuthTypes.User) : Bool { Nat.equal(u.id, userId) })) {
+              case null { #err("User not found") };
+              case (?_) {
+                // Check for active loan assignments
+                let hasActiveAssignments = switch (loanAssignments.find(
+                  func(a : LoanTypes.LoanAssignment) : Bool { Nat.equal(a.user_id, userId) }
+                )) {
+                  case (?_) { true };
+                  case null { false };
+                };
+                if (hasActiveAssignments) {
+                  #err("Cannot delete user with active loan assignments. Please reassign or remove their loans first.")
+                } else {
+                  // Filter the users list to remove the target user, then replace in-place
+                  let usersFiltered = users.filter(
+                    func(u : AuthTypes.User) : Bool { not Nat.equal(u.id, userId) }
+                  );
+                  users.clear();
+                  users.append(usersFiltered);
+                  #ok(())
+                }
+              };
+            }
+          };
+        }
+      };
     }
   };
 };

@@ -4,7 +4,6 @@ import {
   LogOut,
   Menu,
   Settings,
-  Users,
   UsersRound,
   X,
 } from "lucide-react";
@@ -24,9 +23,8 @@ const navLinks: NavLink[] = [
     icon: <LayoutDashboard size={16} />,
   },
   { label: "Loans", href: "#/admin/loans", icon: <FileText size={16} /> },
-  { label: "Users", href: "#/admin/users", icon: <Users size={16} /> },
   {
-    label: "Users & Teams",
+    label: "Teams",
     href: "#/admin/users/team",
     icon: <UsersRound size={16} />,
   },

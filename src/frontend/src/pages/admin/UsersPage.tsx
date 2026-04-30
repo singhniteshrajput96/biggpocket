@@ -1,13 +1,16 @@
 import { useActor } from "@caffeineai/core-infrastructure";
 import {
   AlertCircle,
+  AlertTriangle,
   CheckCircle2,
   Clock,
   Loader2,
   ShieldCheck,
+  Trash2,
   UserCheck,
   UserPlus,
   Users,
+  X,
 } from "lucide-react";
 import { memo, useState } from "react";
 import { createActor } from "../../backend";
@@ -17,8 +20,11 @@ import { Label } from "../../components/ui/label";
 import { Skeleton } from "../../components/ui/skeleton";
 import {
   useAdminCreateUser,
+  useAdminDeleteUser,
   useAdminGetAllUsers,
+  useAdminUpdateUserType,
 } from "../../hooks/useQueries";
+import type { PublicUser } from "../../types";
 
 const BRAND_ORANGE = "#F47B30";
 const BRAND_BLUE = "#1E5FA8";
@@ -28,15 +34,27 @@ const ROLE_OPTIONS = [
   { value: "admin", label: "Admin" },
 ] as const;
 
+const USER_TYPE_OPTIONS = [
+  { value: "internal", label: "Internal (Sales / Operations)" },
+  { value: "external", label: "External (Distribution / Referral)" },
+] as const;
+
 type RoleValue = "user" | "admin";
+type UserTypeValue = "internal" | "external";
 
 interface FormState {
   name: string;
   mobile: string;
   role: RoleValue;
+  user_type: UserTypeValue;
 }
 
-const INITIAL_FORM: FormState = { name: "", mobile: "", role: "user" };
+const INITIAL_FORM: FormState = {
+  name: "",
+  mobile: "",
+  role: "user",
+  user_type: "internal",
+};
 
 function SuccessBanner({
   name,
@@ -150,105 +168,261 @@ function RoleBadge({ role }: { role: string }) {
   );
 }
 
+function UserTypeBadge({ userType }: { userType: string }) {
+  const isInternal = userType !== "external";
+  return (
+    <span
+      className="inline-flex items-center text-xs px-2 py-0.5 rounded-full font-semibold"
+      style={
+        isInternal
+          ? {
+              backgroundColor: "#fff7ed",
+              color: BRAND_ORANGE,
+              border: `1px solid ${BRAND_ORANGE}40`,
+            }
+          : {
+              backgroundColor: "#f4f4f5",
+              color: "#71717a",
+              border: "1px solid #d4d4d8",
+            }
+      }
+    >
+      {isInternal ? "Internal" : "External"}
+    </span>
+  );
+}
+
+// ─── Delete Confirmation Modal ─────────────────────────────────────────────
+
+function DeleteUserModal({
+  user,
+  onClose,
+  onConfirm,
+  isPending,
+  errorMsg,
+}: {
+  user: PublicUser;
+  onClose: () => void;
+  onConfirm: () => void;
+  isPending: boolean;
+  errorMsg: string;
+}) {
+  return (
+    <>
+      <div
+        className="fixed inset-0 z-50 bg-black/40 animate-fade-in"
+        onClick={onClose}
+        onKeyDown={(e) => e.key === "Escape" && onClose()}
+        aria-hidden="true"
+      />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="w-full max-w-sm bg-card rounded-xl shadow-elevated border border-border p-6 space-y-4 animate-fade-in">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-destructive/10 flex items-center justify-center shrink-0">
+              <Trash2 size={18} className="text-destructive" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-foreground truncate">
+                Delete {user.name}?
+              </p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                This cannot be undone. Their access will be revoked.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="shrink-0 text-muted-foreground hover:text-foreground"
+              aria-label="Close"
+            >
+              <X size={16} />
+            </button>
+          </div>
+          {errorMsg && (
+            <div
+              className="flex items-start gap-2 rounded-lg p-3 text-sm"
+              style={{ backgroundColor: "#fef2f2", color: "#dc2626" }}
+            >
+              <AlertTriangle size={15} className="shrink-0 mt-0.5" />
+              <span>{errorMsg}</span>
+            </div>
+          )}
+          <div className="flex gap-3">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={onClose}
+              disabled={isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              className="flex-1"
+              onClick={onConfirm}
+              disabled={isPending}
+              data-ocid="delete-user-confirm-btn"
+            >
+              {isPending ? "Deleting…" : "Delete User"}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
 function RecentUsersList() {
   const { data: users, isLoading } = useAdminGetAllUsers();
+  const deleteUserMutation = useAdminDeleteUser();
+  const [deleteTarget, setDeleteTarget] = useState<PublicUser | null>(null);
+  const [deleteError, setDeleteError] = useState("");
 
   const recent = [...(users ?? [])].sort((a, b) => b.id - a.id).slice(0, 6);
 
-  return (
-    <div className="bg-card border border-border rounded-xl shadow-card overflow-hidden">
-      <div
-        className="px-5 py-3.5 border-b border-border flex items-center justify-between"
-        style={{ background: "linear-gradient(135deg, #eff6ff 0%, #fff 100%)" }}
-      >
-        <div className="flex items-center gap-2">
-          <Users size={15} style={{ color: BRAND_BLUE }} />
-          <h2 className="font-display font-semibold text-foreground text-sm">
-            Recent Users
-          </h2>
-        </div>
-        <a
-          href="#/admin/users/team"
-          className="text-xs font-medium hover:underline transition-smooth"
-          style={{ color: BRAND_BLUE }}
-          data-ocid="view-all-users-link"
-        >
-          View all →
-        </a>
-      </div>
+  async function handleDeleteConfirm() {
+    if (!deleteTarget) return;
+    setDeleteError("");
+    const result = await deleteUserMutation.mutateAsync(deleteTarget.id);
+    if (!result.ok) {
+      setDeleteError(
+        result.err ??
+          "Cannot delete user. They may have active loan assignments.",
+      );
+      return;
+    }
+    setDeleteTarget(null);
+  }
 
-      {isLoading ? (
-        <div className="p-4 space-y-3">
-          {[1, 2, 3].map((n) => (
-            <div key={n} className="flex items-center gap-3">
-              <Skeleton className="w-8 h-8 rounded-full shrink-0" />
-              <div className="flex-1 space-y-1.5">
-                <Skeleton className="h-3.5 w-32" />
-                <Skeleton className="h-3 w-20" />
-              </div>
-            </div>
-          ))}
+  return (
+    <>
+      {deleteTarget && (
+        <DeleteUserModal
+          user={deleteTarget}
+          onClose={() => {
+            setDeleteTarget(null);
+            setDeleteError("");
+          }}
+          onConfirm={handleDeleteConfirm}
+          isPending={deleteUserMutation.isPending}
+          errorMsg={deleteError}
+        />
+      )}
+      <div className="bg-card border border-border rounded-xl shadow-card overflow-hidden">
+        <div
+          className="px-5 py-3.5 border-b border-border flex items-center justify-between"
+          style={{
+            background: "linear-gradient(135deg, #eff6ff 0%, #fff 100%)",
+          }}
+        >
+          <div className="flex items-center gap-2">
+            <Users size={15} style={{ color: BRAND_BLUE }} />
+            <h2 className="font-display font-semibold text-foreground text-sm">
+              Recent Users
+            </h2>
+          </div>
+          <a
+            href="#/admin/users/team"
+            className="text-xs font-medium hover:underline transition-smooth"
+            style={{ color: BRAND_BLUE }}
+            data-ocid="view-all-users-link"
+          >
+            View all →
+          </a>
         </div>
-      ) : recent.length === 0 ? (
-        <div className="px-5 py-8 text-center">
-          <Users size={28} className="mx-auto text-muted-foreground/30 mb-2" />
-          <p className="text-sm text-muted-foreground">No users yet.</p>
-          <p className="text-xs text-muted-foreground mt-1">
-            Create your first user using the form.
-          </p>
-        </div>
-      ) : (
-        <ul className="divide-y divide-border">
-          {recent.map((u) => (
-            <li
-              key={u.id}
-              className="flex items-center gap-3 px-5 py-3 hover:bg-muted/30 transition-smooth"
-              data-ocid={`recent-user-${u.id}`}
-            >
-              <div
-                className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
-                style={{ backgroundColor: BRAND_ORANGE }}
-              >
-                {u.name.charAt(0).toUpperCase()}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-foreground truncate">
-                  {u.name}
-                </p>
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  <Clock size={10} className="text-muted-foreground" />
-                  <span className="text-xs text-muted-foreground">
-                    ID #{u.id}
-                  </span>
+
+        {isLoading ? (
+          <div className="p-4 space-y-3">
+            {[1, 2, 3].map((n) => (
+              <div key={n} className="flex items-center gap-3">
+                <Skeleton className="w-8 h-8 rounded-full shrink-0" />
+                <div className="flex-1 space-y-1.5">
+                  <Skeleton className="h-3.5 w-32" />
+                  <Skeleton className="h-3 w-20" />
                 </div>
               </div>
-              <RoleBadge role={u.role} />
-            </li>
-          ))}
-        </ul>
-      )}
+            ))}
+          </div>
+        ) : recent.length === 0 ? (
+          <div className="px-5 py-8 text-center">
+            <Users
+              size={28}
+              className="mx-auto text-muted-foreground/30 mb-2"
+            />
+            <p className="text-sm text-muted-foreground">No users yet.</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Create your first user using the form.
+            </p>
+          </div>
+        ) : (
+          <ul className="divide-y divide-border">
+            {recent.map((u) => (
+              <li
+                key={u.id}
+                className="flex items-center gap-3 px-5 py-3 hover:bg-muted/30 transition-smooth"
+                data-ocid={`recent-user-${u.id}`}
+              >
+                <div
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
+                  style={{ backgroundColor: BRAND_ORANGE }}
+                >
+                  {u.name.charAt(0).toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-foreground truncate">
+                    {u.name}
+                  </p>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <Clock size={10} className="text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">
+                      ID #{u.id}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <RoleBadge role={u.role} />
+                  <UserTypeBadge userType={u.user_type || "internal"} />
+                  <button
+                    type="button"
+                    className="p-1.5 rounded-md text-destructive hover:bg-destructive/10 transition-smooth"
+                    onClick={() => {
+                      setDeleteError("");
+                      setDeleteTarget(u);
+                    }}
+                    aria-label={`Delete ${u.name}`}
+                    data-ocid={`delete-recent-user-${u.id}`}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
 
-      {!isLoading && recent.length > 0 && (
-        <div className="px-5 py-3 border-t border-border bg-muted/20">
-          <p className="text-xs text-muted-foreground">
-            Showing {recent.length} of {users?.length ?? 0} total users.{" "}
-            <a
-              href="#/admin/users/team"
-              className="hover:underline"
-              style={{ color: BRAND_BLUE }}
-            >
-              View full list
-            </a>
-          </p>
-        </div>
-      )}
-    </div>
+        {!isLoading && recent.length > 0 && (
+          <div className="px-5 py-3 border-t border-border bg-muted/20">
+            <p className="text-xs text-muted-foreground">
+              Showing {recent.length} of {users?.length ?? 0} total users.{" "}
+              <a
+                href="#/admin/users/team"
+                className="hover:underline"
+                style={{ color: BRAND_BLUE }}
+              >
+                View full list
+              </a>
+            </p>
+          </div>
+        )}
+      </div>
+    </>
   );
 }
 
 export default function UsersPage() {
   const { isFetching: actorLoading } = useActor(createActor);
   const createUserMutation = useAdminCreateUser();
+  const updateUserTypeMutation = useAdminUpdateUserType();
 
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
   const [errors, setErrors] = useState<Partial<FormState>>({});
@@ -282,7 +456,17 @@ export default function UsersPage() {
     createUserMutation.mutate(
       { name: form.name.trim(), mobile: form.mobile, role: form.role },
       {
-        onSuccess: () => {
+        onSuccess: (result) => {
+          // After creation, set the user_type via a separate call if not internal
+          if (
+            result &&
+            typeof result === "object" &&
+            "id" in result &&
+            form.user_type !== "internal"
+          ) {
+            const userId = (result as { id: number }).id;
+            updateUserTypeMutation.mutate({ userId, userType: form.user_type });
+          }
           setSuccessInfo({ name: form.name.trim(), mobile: form.mobile });
           setForm(INITIAL_FORM);
         },
@@ -428,6 +612,30 @@ export default function UsersPage() {
                 </p>
               </div>
 
+              {/* User Type */}
+              <div className="space-y-1.5">
+                <Label htmlFor="user-type" className="text-sm font-medium">
+                  User Type
+                </Label>
+                <select
+                  id="user-type"
+                  value={form.user_type}
+                  onChange={(e) => handleChange("user_type", e.target.value)}
+                  className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-smooth"
+                  data-ocid="user-type-select"
+                >
+                  {USER_TYPE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted-foreground">
+                  Internal users (sales/ops) can edit loan files. External users
+                  (referral partners) have view-only access.
+                </p>
+              </div>
+
               {/* Submit */}
               <div className="pt-1">
                 <Button
@@ -477,7 +685,7 @@ export default function UsersPage() {
                 >
                   →
                 </span>
-                View Users & Team Matrix
+                View Team Matrix
               </a>
               <a
                 href="#/admin/loans"

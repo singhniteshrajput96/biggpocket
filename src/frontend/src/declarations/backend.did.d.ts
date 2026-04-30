@@ -13,12 +13,14 @@ import type { Principal } from '@icp-sdk/core/principal';
 export interface DashboardStats {
   'total_loans' : bigint,
   'sanctioned_count' : bigint,
+  'total_sanctioned_amount' : bigint,
   'rejected_loans' : bigint,
   'stage_breakdown' : Array<[bigint, string, bigint]>,
   'disbursement_percent' : number,
   'active_loans' : bigint,
   'recent_activity' : Array<LoanStageHistory>,
   'sanctioned_percent' : number,
+  'total_disbursed_amount' : bigint,
   'dropoff_rate' : number,
   'disbursed_count' : bigint,
 }
@@ -38,6 +40,7 @@ export interface LoanApplication {
   'updated_at' : Timestamp,
   'current_stage' : bigint,
   'is_rejected' : boolean,
+  'required_amount' : bigint,
   'employment_type' : string,
   'created_at' : Timestamp,
   'user_id' : [] | [UserId],
@@ -45,8 +48,10 @@ export interface LoanApplication {
   'loan_type' : string,
   'income' : bigint,
   'rejection_stage' : bigint,
+  'sanction_amount' : bigint,
   'property_value' : bigint,
   'distribution_partner' : string,
+  'disbursed_amount' : bigint,
   'property_type' : string,
   'is_active' : boolean,
   'rejection_reason' : string,
@@ -73,16 +78,45 @@ export interface PaginatedLoans {
   'pageSize' : bigint,
   'loans' : Array<LoanWithHistory>,
 }
-export interface PublicUser { 'id' : UserId, 'name' : string, 'role' : Role }
+export interface PublicUser {
+  'id' : UserId,
+  'user_type' : string,
+  'name' : string,
+  'role' : Role,
+}
 export type Role = { 'admin' : null } |
   { 'user' : null };
 export type Timestamp = bigint;
 export type Token = string;
+export interface UpdateLoanInput {
+  'co_applicant_name' : [] | [string],
+  'bank_name' : [] | [string],
+  'required_amount' : [] | [bigint],
+  'employment_type' : [] | [string],
+  'loan_amount' : [] | [bigint],
+  'loan_type' : [] | [string],
+  'income' : [] | [bigint],
+  'sanction_amount' : [] | [bigint],
+  'property_value' : [] | [bigint],
+  'distribution_partner' : [] | [string],
+  'disbursed_amount' : [] | [bigint],
+  'property_type' : [] | [string],
+  'applicant_name' : [] | [string],
+}
 export interface UploadDocumentInput {
   'loan_id' : bigint,
   'file_name' : string,
   'file_url' : string,
   'file_size' : bigint,
+}
+export interface UserDashboardStats {
+  'total_loans' : bigint,
+  'total_sanctioned_amount' : bigint,
+  'stage_breakdown' : Array<[string, bigint]>,
+  'recent_loans' : Array<LoanApplication>,
+  'active_loans' : bigint,
+  'total_value' : bigint,
+  'total_disbursed_amount' : bigint,
 }
 export type UserId = bigint;
 export interface _SERVICE {
@@ -120,6 +154,9 @@ export interface _SERVICE {
       bigint,
       string,
       bigint,
+      [] | [bigint],
+      [] | [bigint],
+      [] | [bigint],
     ],
     { 'ok' : bigint } |
       { 'err' : string }
@@ -139,6 +176,11 @@ export interface _SERVICE {
     { 'ok' : null } |
       { 'err' : string }
   >,
+  'adminDeleteUser' : ActorMethod<
+    [string, bigint],
+    { 'ok' : null } |
+      { 'err' : string }
+  >,
   'adminGetAllLoans' : ActorMethod<
     [string, bigint, bigint, string, [] | [bigint], [] | [bigint]],
     { 'ok' : PaginatedLoans } |
@@ -152,6 +194,11 @@ export interface _SERVICE {
   'adminGetDashboardStats' : ActorMethod<
     [string],
     { 'ok' : DashboardStats } |
+      { 'err' : string }
+  >,
+  'adminGetDeletedLoans' : ActorMethod<
+    [string],
+    { 'ok' : Array<LoanWithHistory> } |
       { 'err' : string }
   >,
   'adminGetLoanDocuments' : ActorMethod<
@@ -174,6 +221,11 @@ export interface _SERVICE {
     { 'ok' : null } |
       { 'err' : string }
   >,
+  'adminRestoreLoan' : ActorMethod<
+    [string, bigint],
+    { 'ok' : null } |
+      { 'err' : string }
+  >,
   'adminUnrejectLoan' : ActorMethod<
     [string, bigint],
     { 'ok' : null } |
@@ -185,13 +237,18 @@ export interface _SERVICE {
       { 'err' : string }
   >,
   'adminUpdateLoan' : ActorMethod<
-    [string, bigint, string, string, string, bigint],
+    [string, bigint, UpdateLoanInput],
     { 'ok' : null } |
       { 'err' : string }
   >,
   'adminUpdateStage' : ActorMethod<
     [string, bigint, bigint, string, boolean],
     { 'ok' : null } |
+      { 'err' : string }
+  >,
+  'adminUpdateUserType' : ActorMethod<
+    [string, bigint, string],
+    { 'ok' : PublicUser } |
       { 'err' : string }
   >,
   'getLoanById' : ActorMethod<
@@ -207,6 +264,11 @@ export interface _SERVICE {
   'getMyLoans' : ActorMethod<
     [string],
     { 'ok' : Array<LoanWithHistory> } |
+      { 'err' : string }
+  >,
+  'getUserDashboard' : ActorMethod<
+    [string],
+    { 'ok' : UserDashboardStats } |
       { 'err' : string }
   >,
   'sendOTP' : ActorMethod<[string], string>,

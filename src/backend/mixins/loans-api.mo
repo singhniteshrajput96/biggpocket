@@ -75,6 +75,7 @@ mixin (
     }
   };
 
+  // Create loan — now accepts optional financial fields (required_amount, sanction_amount, disbursed_amount)
   public func adminCreateLoan(
     token : Text,
     applicantName : Text,
@@ -87,50 +88,44 @@ mixin (
     employmentType : Text,
     income : Nat,
     propertyType : Text,
-    propertyValue : Nat
+    propertyValue : Nat,
+    requiredAmount : ?Nat,
+    sanctionAmount : ?Nat,
+    disbursedAmount : ?Nat
   ) : async { #ok : Nat; #err : Text } {
     switch (AuthLib.requireAdmin(token, sessions, users)) {
       case (#err(e)) { #err(e) };
-      case (#ok(admin)) {
-        let now = Time.now();
+      case (#ok(_)) {
+        // Find user by mobile if provided, otherwise no user assigned
         let userId : ?Common.UserId = if (mobile.size() > 0) {
           switch (users.find(func(u : AuthTypes.User) : Bool { Text.equal(u.mobile_number, mobile) })) {
             case (?u) { ?u.id };
             case null { null };
           }
         } else { null };
-        let loan = LoanLib.createLoan(
-          loans, nextLoanIdRef[0], applicantName, bankName, loanType, loanAmount,
-          userId, now, distributionPartner, coApplicantName, employmentType,
-          income, propertyType, propertyValue
+        let now = Time.now();
+        let loanId = nextLoanIdRef[0];
+        let _loan = LoanLib.createLoan(
+          loans,
+          loanId,
+          applicantName,
+          bankName,
+          loanType,
+          loanAmount,
+          userId,
+          now,
+          distributionPartner,
+          coApplicantName,
+          employmentType,
+          income,
+          propertyType,
+          propertyValue,
+          switch (requiredAmount) { case (?v) v; case null 0 },
+          switch (sanctionAmount) { case (?v) v; case null 0 },
+          switch (disbursedAmount) { case (?v) v; case null 0 }
         );
         nextLoanIdRef[0] += 1;
-        // Create initial stage history entry
-        loanHistory.add({
-          id = nextHistoryIdRef[0];
-          loan_id = loan.id;
-          stage_index = 0;
-          stage_name = LoanLib.STAGE_NAMES[0];
-          remarks = "Loan created";
-          show_remarks_to_user = true;
-          updated_by_admin_id = admin.id;
-          timestamp = now;
-        });
-        nextHistoryIdRef[0] += 1;
-        // If user found, also add many-to-many assignment
-        switch (userId) {
-          case (?uid) {
-            loanAssignments.add({
-              id = nextAssignmentIdRef[0];
-              loan_id = loan.id;
-              user_id = uid;
-              assigned_at = now;
-            });
-            nextAssignmentIdRef[0] += 1;
-          };
-          case null {};
-        };
-        #ok(loan.id)
+        #ok(loanId)
       };
     }
   };
@@ -368,19 +363,17 @@ mixin (
     }
   };
 
+  // Update loan with all optional fields including financials via UpdateLoanInput
   public func adminUpdateLoan(
     token : Text,
     loanId : Nat,
-    applicantName : Text,
-    bankName : Text,
-    loanType : Text,
-    loanAmount : Nat
+    input : LoanTypes.UpdateLoanInput
   ) : async { #ok : (); #err : Text } {
     switch (AuthLib.requireAdmin(token, sessions, users)) {
       case (#err(e)) { #err(e) };
       case (#ok(_)) {
         let now = Time.now();
-        let success = LoanLib.updateLoanDetails(loans, loanId, applicantName, bankName, loanType, loanAmount, now);
+        let success = LoanLib.updateLoanDetails(loans, loanId, input, now);
         if (success) {
           #ok(())
         } else {
@@ -427,6 +420,51 @@ mixin (
               #ok(LoanLib.getDocumentsForLoan(documents, loanId))
             }
           };
+        }
+      };
+    }
+  };
+
+  // User: get their own dashboard stats (restricted to assigned loans)
+  public func getUserDashboard(token : Text) : async {
+    #ok : LoanTypes.UserDashboardStats;
+    #err : Text;
+  } {
+    switch (AuthLib.requireUser(token, sessions, users)) {
+      case (#err(e)) { #err(e) };
+      case (#ok(user)) {
+        #ok(LoanLib.getUserDashboardStats(loans, loanAssignments, user.id))
+      };
+    }
+  };
+
+  // Get all soft-deleted loans (is_active = false)
+  public func adminGetDeletedLoans(token : Text) : async {
+    #ok : [LoanTypes.LoanWithHistory];
+    #err : Text;
+  } {
+    switch (AuthLib.requireAdmin(token, sessions, users)) {
+      case (#err(e)) { #err(e) };
+      case (#ok(_)) {
+        #ok(LoanLib.getDeletedLoans(loans, loanHistory, loanAssignments))
+      };
+    }
+  };
+
+  // Restore a soft-deleted loan (set is_active = true)
+  public func adminRestoreLoan(token : Text, loanId : Nat) : async {
+    #ok : ();
+    #err : Text;
+  } {
+    switch (AuthLib.requireAdmin(token, sessions, users)) {
+      case (#err(e)) { #err(e) };
+      case (#ok(_)) {
+        let now = Time.now();
+        let success = LoanLib.restoreLoan(loans, loanId, now);
+        if (success) {
+          #ok(())
+        } else {
+          #err("Loan not found or already active")
         }
       };
     }

@@ -2,6 +2,7 @@ import { fileURLToPath, URL } from "url";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import environment from "vite-plugin-environment";
+import { VitePWA } from "vite-plugin-pwa";
 
 const ii_url =
   process.env.DFX_NETWORK === "local"
@@ -43,6 +44,59 @@ export default defineConfig({
     environment(["II_URL"]),
     environment(["STORAGE_GATEWAY_URL"]),
     react(),
+    VitePWA({
+      registerType: "autoUpdate",
+      includeAssets: ["favicon.ico", "apple-touch-icon.png"],
+      manifest: {
+        name: "BiggPocket - Loan Tracker",
+        short_name: "BiggPocket",
+        description:
+          "Track and manage loan applications with BiggPocket DSA platform",
+        theme_color: "#F47B30",
+        background_color: "#1E5FA8",
+        display: "standalone",
+        orientation: "portrait",
+        scope: "/",
+        start_url: "/",
+        icons: [
+          {
+            src: "/assets/generated/pwa-icon-512.dim_512x512.png",
+            sizes: "192x192",
+            type: "image/png",
+          },
+          {
+            src: "/assets/generated/pwa-icon-512.dim_512x512.png",
+            sizes: "512x512",
+            type: "image/png",
+          },
+          {
+            src: "/assets/generated/pwa-icon-512.dim_512x512.png",
+            sizes: "512x512",
+            type: "image/png",
+            purpose: "any maskable",
+          },
+        ],
+      },
+      workbox: {
+        globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
+        runtimeCaching: [
+          {
+            urlPattern: /^https:\/\/.*\.ic0\.app\/.*/i,
+            handler: "NetworkFirst",
+            options: {
+              cacheName: "api-cache",
+              expiration: {
+                maxEntries: 10,
+                maxAgeSeconds: 60 * 60 * 24,
+              },
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+            },
+          },
+        ],
+      },
+    }),
   ],
   resolve: {
     alias: [

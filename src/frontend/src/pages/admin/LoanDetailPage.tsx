@@ -45,6 +45,7 @@ import {
   useGetLoanById,
 } from "../../hooks/useQueries";
 import { useStorageUpload } from "../../hooks/useStorageUpload";
+import { getSession } from "../../lib/auth";
 import type {
   Document,
   LoanApplication,
@@ -349,9 +350,17 @@ function AddUserModal({
 interface LoanInfoProps {
   loan: LoanApplication;
   loanId: number;
+  isReadOnly?: boolean;
+  /** True if user is external (can view but cannot edit financial amounts) */
+  isExternalUser?: boolean;
 }
 
-function LoanInfoCard({ loan, loanId }: LoanInfoProps) {
+function LoanInfoCard({
+  loan,
+  loanId,
+  isReadOnly = false,
+  isExternalUser = false,
+}: LoanInfoProps) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({
     applicantName: loan.applicantName,
@@ -365,8 +374,20 @@ function LoanInfoCard({ loan, loanId }: LoanInfoProps) {
     propertyType: loan.propertyType ?? "",
     propertyValue: loan.propertyValue ? String(loan.propertyValue) : "",
   });
+
+  // Financial editing state
+  const [editingFinancials, setEditingFinancials] = useState(false);
+  const [financialForm, setFinancialForm] = useState({
+    requiredAmount: loan.requiredAmount ? String(loan.requiredAmount) : "",
+    sanctionAmount: loan.sanctionAmount ? String(loan.sanctionAmount) : "",
+    disbursedAmount: loan.disbursedAmount ? String(loan.disbursedAmount) : "",
+  });
+  const [financialErr, setFinancialErr] = useState("");
+
   const [err, setErr] = useState("");
   const updateLoan = useAdminUpdateLoan();
+
+  const canEditFinancials = !isReadOnly && !isExternalUser;
 
   async function handleSave() {
     const amt = Number(form.loanAmount);
@@ -394,6 +415,43 @@ function LoanInfoCard({ loan, loanId }: LoanInfoProps) {
       setEditing(false);
     } catch (e) {
       setErr((e as Error).message ?? "Failed to save changes.");
+    }
+  }
+
+  async function handleSaveFinancials() {
+    setFinancialErr("");
+    const requiredAmt = financialForm.requiredAmount
+      ? Number(financialForm.requiredAmount)
+      : undefined;
+    const sanctionAmt = financialForm.sanctionAmount
+      ? Number(financialForm.sanctionAmount)
+      : undefined;
+    const disbursedAmt = financialForm.disbursedAmount
+      ? Number(financialForm.disbursedAmount)
+      : undefined;
+
+    if (
+      (requiredAmt !== undefined && Number.isNaN(requiredAmt)) ||
+      (sanctionAmt !== undefined && Number.isNaN(sanctionAmt)) ||
+      (disbursedAmt !== undefined && Number.isNaN(disbursedAmt))
+    ) {
+      setFinancialErr("Enter valid numeric amounts.");
+      return;
+    }
+    try {
+      await updateLoan.mutateAsync({
+        loanId,
+        applicantName: loan.applicantName,
+        bankName: loan.bankName,
+        loanType: loan.loanType,
+        loanAmount: loan.loanAmount,
+        requiredAmount: requiredAmt,
+        sanctionAmount: sanctionAmt,
+        disbursedAmount: disbursedAmt,
+      });
+      setEditingFinancials(false);
+    } catch (e) {
+      setFinancialErr((e as Error).message ?? "Failed to save financial data.");
     }
   }
 
@@ -433,46 +491,47 @@ function LoanInfoCard({ loan, loanId }: LoanInfoProps) {
           <CardTitle className="text-base font-display font-semibold">
             Loan Information
           </CardTitle>
-          {editing ? (
-            <div className="flex gap-2">
+          {!isReadOnly &&
+            (editing ? (
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setEditing(false);
+                    setErr("");
+                  }}
+                >
+                  <X size={14} className="mr-1" />
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleSave}
+                  disabled={updateLoan.isPending}
+                  className="text-white"
+                  style={{ backgroundColor: "#f97316" }}
+                  data-ocid="detail-save-btn"
+                >
+                  {updateLoan.isPending ? (
+                    <Loader2 size={14} className="animate-spin mr-1" />
+                  ) : (
+                    <Save size={14} className="mr-1" />
+                  )}
+                  Save
+                </Button>
+              </div>
+            ) : (
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => {
-                  setEditing(false);
-                  setErr("");
-                }}
+                onClick={() => setEditing(true)}
+                data-ocid="detail-edit-btn"
               >
-                <X size={14} className="mr-1" />
-                Cancel
+                <Pencil size={14} className="mr-1" />
+                Edit
               </Button>
-              <Button
-                size="sm"
-                onClick={handleSave}
-                disabled={updateLoan.isPending}
-                className="text-white"
-                style={{ backgroundColor: "#f97316" }}
-                data-ocid="detail-save-btn"
-              >
-                {updateLoan.isPending ? (
-                  <Loader2 size={14} className="animate-spin mr-1" />
-                ) : (
-                  <Save size={14} className="mr-1" />
-                )}
-                Save
-              </Button>
-            </div>
-          ) : (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setEditing(true)}
-              data-ocid="detail-edit-btn"
-            >
-              <Pencil size={14} className="mr-1" />
-              Edit
-            </Button>
-          )}
+            ))}
         </div>
       </CardHeader>
       <CardContent className="space-y-5">
@@ -601,12 +660,247 @@ function LoanInfoCard({ loan, loanId }: LoanInfoProps) {
             {err}
           </p>
         )}
+
+        {/* ── Financial Details section ── */}
+        <div className="pt-2 border-t border-border">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              Financial Details
+            </p>
+            {canEditFinancials &&
+              (editingFinancials ? (
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setEditingFinancials(false);
+                      setFinancialErr("");
+                      setFinancialForm({
+                        requiredAmount: loan.requiredAmount
+                          ? String(loan.requiredAmount)
+                          : "",
+                        sanctionAmount: loan.sanctionAmount
+                          ? String(loan.sanctionAmount)
+                          : "",
+                        disbursedAmount: loan.disbursedAmount
+                          ? String(loan.disbursedAmount)
+                          : "",
+                      });
+                    }}
+                  >
+                    <X size={13} className="mr-1" />
+                    Cancel
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleSaveFinancials}
+                    disabled={updateLoan.isPending}
+                    className="text-white"
+                    style={{ backgroundColor: "#f97316" }}
+                    data-ocid="detail-financials-save-btn"
+                  >
+                    {updateLoan.isPending ? (
+                      <Loader2 size={13} className="animate-spin mr-1" />
+                    ) : (
+                      <Save size={13} className="mr-1" />
+                    )}
+                    Save
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setEditingFinancials(true)}
+                  data-ocid="detail-financials-edit-btn"
+                >
+                  <Pencil size={13} className="mr-1" />
+                  Edit
+                </Button>
+              ))}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {/* Required Amount */}
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                Required Amount (₹)
+              </Label>
+              {canEditFinancials && editingFinancials ? (
+                <Input
+                  type="number"
+                  placeholder="e.g. 5000000"
+                  value={financialForm.requiredAmount}
+                  onChange={(e) =>
+                    setFinancialForm((f) => ({
+                      ...f,
+                      requiredAmount: e.target.value,
+                    }))
+                  }
+                  data-ocid="detail-edit-requiredAmount"
+                />
+              ) : (
+                <p className="text-sm font-medium text-foreground">
+                  {loan.requiredAmount
+                    ? formatCurrency(loan.requiredAmount)
+                    : "—"}
+                </p>
+              )}
+            </div>
+
+            {/* Sanction Amount */}
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                Sanction Amount (₹)
+              </Label>
+              {canEditFinancials && editingFinancials ? (
+                <Input
+                  type="number"
+                  placeholder="e.g. 4800000"
+                  value={financialForm.sanctionAmount}
+                  onChange={(e) =>
+                    setFinancialForm((f) => ({
+                      ...f,
+                      sanctionAmount: e.target.value,
+                    }))
+                  }
+                  data-ocid="detail-edit-sanctionAmount"
+                />
+              ) : (
+                <p className="text-sm font-medium text-foreground">
+                  {loan.sanctionAmount
+                    ? formatCurrency(loan.sanctionAmount)
+                    : "—"}
+                </p>
+              )}
+            </div>
+
+            {/* Disbursed Amount */}
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                Disbursed Amount (₹)
+              </Label>
+              {canEditFinancials && editingFinancials ? (
+                <Input
+                  type="number"
+                  placeholder="e.g. 4500000"
+                  value={financialForm.disbursedAmount}
+                  onChange={(e) =>
+                    setFinancialForm((f) => ({
+                      ...f,
+                      disbursedAmount: e.target.value,
+                    }))
+                  }
+                  data-ocid="detail-edit-disbursedAmount"
+                />
+              ) : (
+                <p className="text-sm font-medium text-foreground">
+                  {loan.disbursedAmount
+                    ? formatCurrency(loan.disbursedAmount)
+                    : "—"}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Visual comparison strip (read-only) */}
+          {(loan.requiredAmount ||
+            loan.sanctionAmount ||
+            loan.disbursedAmount) &&
+            !editingFinancials && (
+              <div
+                className="mt-3 rounded-lg px-3 py-2.5 flex flex-wrap items-center gap-3 text-xs"
+                style={{
+                  backgroundColor: "#fff7ed",
+                  border: "1px solid #fed7aa",
+                }}
+              >
+                <span className="font-semibold text-foreground">
+                  Financial Summary:
+                </span>
+                {loan.requiredAmount ? (
+                  <span className="text-muted-foreground">
+                    Required:{" "}
+                    <span className="font-medium text-foreground">
+                      {formatCurrency(loan.requiredAmount)}
+                    </span>
+                  </span>
+                ) : null}
+                {loan.sanctionAmount ? (
+                  <span className="text-muted-foreground">
+                    Sanctioned:{" "}
+                    <span className="font-medium text-foreground">
+                      {formatCurrency(loan.sanctionAmount)}
+                    </span>
+                  </span>
+                ) : null}
+                {loan.disbursedAmount ? (
+                  <span className="text-muted-foreground">
+                    Disbursed:{" "}
+                    <span
+                      style={{ color: "#16a34a" }}
+                      className="font-semibold"
+                    >
+                      {formatCurrency(loan.disbursedAmount)}
+                    </span>
+                  </span>
+                ) : null}
+              </div>
+            )}
+
+          {financialErr && (
+            <p className="text-sm text-destructive flex items-center gap-1.5 mt-2">
+              <AlertTriangle size={13} />
+              {financialErr}
+            </p>
+          )}
+        </div>
       </CardContent>
     </Card>
   );
 }
 
 // ─── Assigned Users Card ──────────────────────────────────────────────────────
+
+const BRAND_ORANGE_DETAIL = "#F47B30";
+
+function UserChip({
+  uid,
+  user,
+  removingId,
+  onRemove,
+  style,
+}: {
+  uid: number;
+  user: PublicUser | undefined;
+  removingId: number | null;
+  onRemove: (id: number) => void;
+  style: React.CSSProperties;
+}) {
+  return (
+    <div
+      className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold"
+      style={style}
+    >
+      <span>{user?.name ?? `User #${uid}`}</span>
+      <button
+        type="button"
+        onClick={() => onRemove(uid)}
+        disabled={removingId === uid}
+        className="rounded-full hover:opacity-70 transition-smooth p-0.5 ml-0.5"
+        aria-label={`Remove ${user?.name ?? uid}`}
+        data-ocid={`remove-user-${uid}`}
+      >
+        {removingId === uid ? (
+          <Loader2 size={10} className="animate-spin" />
+        ) : (
+          <UserMinus size={10} />
+        )}
+      </button>
+    </div>
+  );
+}
 
 function AssignedUsersCard({
   loanId,
@@ -622,6 +916,13 @@ function AssignedUsersCard({
   const [err, setErr] = useState("");
 
   const userMap = new Map(allUsers.map((u) => [u.id, u]));
+
+  const internalUsers = assignedUserIds.filter(
+    (uid) => (userMap.get(uid)?.user_type || "internal") !== "external",
+  );
+  const externalUsers = assignedUserIds.filter(
+    (uid) => (userMap.get(uid)?.user_type || "internal") === "external",
+  );
 
   async function handleRemove(userId: number) {
     setRemovingId(userId);
@@ -663,40 +964,77 @@ function AssignedUsersCard({
             </Button>
           </div>
         </CardHeader>
-        <CardContent className="space-y-2">
+        <CardContent className="space-y-4">
           {assignedUserIds.length === 0 ? (
             <p className="text-sm text-muted-foreground italic py-2 text-center">
               No users assigned yet.
             </p>
           ) : (
-            <div className="flex flex-wrap gap-2">
-              {assignedUserIds.map((uid) => {
-                const user = userMap.get(uid);
-                return (
-                  <div
-                    key={uid}
-                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold"
-                    style={{ backgroundColor: "#eff6ff", color: "#1d4ed8" }}
-                  >
-                    <span>{user?.name ?? `User #${uid}`}</span>
-                    <button
-                      type="button"
-                      onClick={() => handleRemove(uid)}
-                      disabled={removingId === uid}
-                      className="rounded-full hover:bg-blue-200 transition-smooth p-0.5 ml-0.5"
-                      aria-label={`Remove ${user?.name ?? uid}`}
-                      data-ocid={`remove-user-${uid}`}
-                    >
-                      {removingId === uid ? (
-                        <Loader2 size={10} className="animate-spin" />
-                      ) : (
-                        <UserMinus size={10} />
-                      )}
-                    </button>
+            <>
+              {/* Internal Team */}
+              <div>
+                <p
+                  className="text-xs font-bold uppercase tracking-wider mb-2 px-2 py-1 rounded"
+                  style={{
+                    color: BRAND_ORANGE_DETAIL,
+                    backgroundColor: "#fff7ed",
+                  }}
+                >
+                  Internal Team
+                </p>
+                {internalUsers.length === 0 ? (
+                  <p className="text-xs text-muted-foreground italic ml-1">
+                    No internal users assigned.
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {internalUsers.map((uid) => (
+                      <UserChip
+                        key={uid}
+                        uid={uid}
+                        user={userMap.get(uid)}
+                        removingId={removingId}
+                        onRemove={handleRemove}
+                        style={{
+                          backgroundColor: "#fff7ed",
+                          color: "#c2410c",
+                          border: `1px solid ${BRAND_ORANGE_DETAIL}40`,
+                        }}
+                      />
+                    ))}
                   </div>
-                );
-              })}
-            </div>
+                )}
+              </div>
+
+              {/* External Team */}
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider mb-2 px-2 py-1 rounded bg-muted/40 text-muted-foreground">
+                  External Team
+                </p>
+                {externalUsers.length === 0 ? (
+                  <p className="text-xs text-muted-foreground italic ml-1">
+                    No external users assigned.
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {externalUsers.map((uid) => (
+                      <UserChip
+                        key={uid}
+                        uid={uid}
+                        user={userMap.get(uid)}
+                        removingId={removingId}
+                        onRemove={handleRemove}
+                        style={{
+                          backgroundColor: "#f4f4f5",
+                          color: "#52525b",
+                          border: "1px solid #d4d4d8",
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
           )}
           {err && (
             <p className="text-xs text-destructive flex items-center gap-1">
@@ -1175,7 +1513,10 @@ function DocumentRow({
   );
 }
 
-function DocumentsSection({ loanId }: { loanId: number }) {
+function DocumentsSection({
+  loanId,
+  isReadOnly = false,
+}: { loanId: number; isReadOnly?: boolean }) {
   const { data: docs = [], isLoading } = useAdminGetLoanDocuments(loanId);
   const addDoc = useAdminAddDocument();
   const deleteDoc = useAdminDeleteDocument();
@@ -1243,29 +1584,33 @@ function DocumentsSection({ loanId }: { loanId: number }) {
                 </Badge>
               )}
             </CardTitle>
-            <Button
-              size="sm"
-              className="text-white gap-1.5 shrink-0"
-              style={{ backgroundColor: "#f97316" }}
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploadProgress !== null}
-              data-ocid="doc-upload-btn"
-            >
-              {uploadProgress !== null ? (
-                <Loader2 size={13} className="animate-spin" />
-              ) : (
-                <Upload size={13} />
-              )}
-              Upload
-            </Button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              className="sr-only"
-              onChange={handleFileChange}
-              aria-label="Upload document"
-              data-ocid="doc-file-input"
-            />
+            {!isReadOnly && (
+              <>
+                <Button
+                  size="sm"
+                  className="text-white gap-1.5 shrink-0"
+                  style={{ backgroundColor: "#f97316" }}
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadProgress !== null}
+                  data-ocid="doc-upload-btn"
+                >
+                  {uploadProgress !== null ? (
+                    <Loader2 size={13} className="animate-spin" />
+                  ) : (
+                    <Upload size={13} />
+                  )}
+                  Upload
+                </Button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="sr-only"
+                  onChange={handleFileChange}
+                  aria-label="Upload document"
+                  data-ocid="doc-file-input"
+                />
+              </>
+            )}
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -1464,7 +1809,22 @@ function DetailSkeleton() {
 
 export default function LoanDetailPage({ loanId }: LoanDetailPageProps) {
   const { data, isLoading, isError } = useGetLoanById(loanId);
+  const { data: allUsers = [] } = useAdminGetAllUsers();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  // Determine if the logged-in user is admin or internal/external
+  const session = getSession();
+  const isAdmin = session?.role === "admin";
+  const isReadOnly = !isAdmin;
+
+  // Determine if the logged-in user is an external team member on this loan
+  // External users can view but not edit financial fields
+  const isExternalUser = (() => {
+    if (isAdmin) return false;
+    if (!data || !session) return false;
+    const userRecord = allUsers.find((u) => u.id === session.userId);
+    return (userRecord?.user_type ?? "internal") === "external";
+  })();
 
   if (isLoading) return <DetailSkeleton />;
 
@@ -1620,8 +1980,13 @@ export default function LoanDetailPage({ loanId }: LoanDetailPageProps) {
         {/* ── Main grid ── */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           <div className="md:col-span-2 space-y-5">
-            <LoanInfoCard loan={loan} loanId={loanId} />
-            <DocumentsSection loanId={loanId} />
+            <LoanInfoCard
+              loan={loan}
+              loanId={loanId}
+              isReadOnly={isReadOnly}
+              isExternalUser={isExternalUser}
+            />
+            <DocumentsSection loanId={loanId} isReadOnly={isReadOnly} />
             <HistoryTimeline history={history} />
           </div>
           <div className="space-y-5">
@@ -1629,8 +1994,13 @@ export default function LoanDetailPage({ loanId }: LoanDetailPageProps) {
               loanId={loanId}
               assignedUserIds={assignedUserIds ?? []}
             />
-            <StageUpdateCard loanId={loanId} currentStage={loan.currentStage} />
-            <RejectActionCard loan={loan} />
+            {!isReadOnly && (
+              <StageUpdateCard
+                loanId={loanId}
+                currentStage={loan.currentStage}
+              />
+            )}
+            {!isReadOnly && <RejectActionCard loan={loan} />}
           </div>
         </div>
       </div>

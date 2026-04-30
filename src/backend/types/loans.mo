@@ -22,6 +22,10 @@ module {
     is_rejected : Bool;       // special flag, not a sequential stage
     rejection_reason : Text;
     rejection_stage : Nat;    // stage index at time of rejection
+    // Financial tracking fields (default 0 for backward compatibility)
+    required_amount : Nat;    // amount requested by applicant
+    sanction_amount : Nat;    // amount sanctioned by bank (may differ from required)
+    disbursed_amount : Nat;   // amount actually disbursed (may differ from sanction)
   };
 
   public type LoanStageHistory = {
@@ -43,15 +47,18 @@ module {
 
   public type DashboardStats = {
     total_loans : Nat;
-    active_loans : Nat;        // stages 0-7, not rejected
-    disbursed_count : Nat;     // stages 7+
-    sanctioned_count : Nat;    // stages 6+
-    rejected_loans : Nat;      // is_rejected = true
+    active_loans : Nat;              // stages 0-7, not rejected
+    disbursed_count : Nat;           // stages 7+
+    sanctioned_count : Nat;          // stages 6+
+    rejected_loans : Nat;            // is_rejected = true
     stage_breakdown : [(Nat, Text, Nat)]; // (stage_index, stage_name, count)
     recent_activity : [LoanStageHistory]; // last 10
     sanctioned_percent : Float;
     disbursement_percent : Float;
     dropoff_rate : Float;
+    // Financial totals (new — default 0 when no loans)
+    total_disbursed_amount : Nat;    // sum of disbursed_amount for all active loans
+    total_sanctioned_amount : Nat;   // sum of sanction_amount for all active loans
   };
 
   public type PaginatedLoans = {
@@ -97,9 +104,12 @@ module {
     active_loans : Nat;
     stage_breakdown : [(Text, Nat)];
     recent_loans : [LoanApplication];
+    // Financial totals for user's assigned loans
+    total_disbursed_amount : Nat;    // sum of disbursed_amount for user's active loans
+    total_sanctioned_amount : Nat;   // sum of sanction_amount for user's active loans
   };
 
-  // Input types for loan creation — includes new fields
+  // Input types for loan creation — includes new financial fields
   public type CreateLoanInput = {
     applicant_name : Text;
     loan_amount : Nat;
@@ -111,6 +121,10 @@ module {
     income : Nat;
     property_type : Text;
     property_value : Nat;
+    // Optional financial fields — default to 0 if not provided
+    required_amount : ?Nat;
+    sanction_amount : ?Nat;
+    disbursed_amount : ?Nat;
   };
 
   // Input type for updating a loan — all fields optional for partial updates
@@ -125,6 +139,10 @@ module {
     income : ?Nat;
     property_type : ?Text;
     property_value : ?Nat;
+    // Optional financial field updates
+    required_amount : ?Nat;
+    sanction_amount : ?Nat;
+    disbursed_amount : ?Nat;
   };
 
   // Assign multiple users to one loan
